@@ -68,6 +68,9 @@ def _build_stock_context(s: StockScore, stock_data: dict) -> dict:
         "pct_52w": t.get("pct_from_52w_high"),
         "growth_expl": s.explanations.get("growth", ""),
         "quality_expl": s.explanations.get("quality", ""),
+        "roce": f.get("roce"),
+        "roa": f.get("roa"),
+        "rev_cagr_5yr": f.get("revenue_cagr_5yr"),
     }
 
 
@@ -79,6 +82,7 @@ def render(
     templates_dir: Path,
     run_date: str | None = None,
     card_limit: int = 20,
+    screen_results: list[dict] | None = None,
 ) -> Path:
     """
     Render the HTML report and write to reports_dir/html/YYYY-MM-DD.html.
@@ -108,6 +112,7 @@ def render(
         top_score=f"{scores[0].composite:.1f}" if scores else "—",
         stocks=stocks_ctx,
         card_limit=card_limit,
+        screen_results=screen_results or [],
     )
 
     out_path.write_text(html, encoding="utf-8")

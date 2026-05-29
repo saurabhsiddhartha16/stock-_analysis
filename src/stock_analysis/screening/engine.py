@@ -132,3 +132,26 @@ def _get_compiled_for_sector(
 def get_passing_symbols(results: list[ScreenResult]) -> list[str]:
     """Extract symbols that passed all rules, in order."""
     return [r.symbol for r in results if r.passed]
+
+
+def run_screens(
+    symbols: list[str],
+    stock_data: dict[str, dict],
+    rules_cfg: "RulesConfig",
+) -> list[dict]:
+    """
+    Run all named screens (rules_cfg.screens) against the given symbol list.
+    Returns a list of dicts: [{id, name, symbols: [...]}, ...]
+    Missing data fields are treated as non-passing (unlike global rules which skip on missing).
+    """
+    results = []
+    for screen in (rules_cfg.screens or []):
+        compiled = compile_rules(screen.rules)
+        passing = []
+        for sym in symbols:
+            data = stock_data.get(sym, {})
+            if all(fn(data) is True for _, fn in compiled):
+                passing.append(sym)
+        results.append({"id": screen.id, "name": screen.name, "symbols": passing})
+        logger.info(f"Screen '{screen.name}': {len(passing)}/{len(symbols)} stocks passed")
+    return results

@@ -21,6 +21,7 @@ def send(
     email_cfg: EmailConfig,
     run_date: str,
     top_n: int = 15,
+    screen_results: list[dict] | None = None,
 ) -> bool:
     """
     Send the daily digest email.
@@ -48,7 +49,7 @@ def send(
     msg["From"] = email_cfg.from_address
     msg["To"] = ", ".join(email_cfg.to_addresses)
 
-    html_body = _build_email_html(scores[:top_n], stock_data, run_date)
+    html_body = _build_email_html(scores[:top_n], stock_data, run_date, screen_results)
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     if csv_path and csv_path.exists():
@@ -78,6 +79,7 @@ def _build_email_html(
     scores: list[StockScore],
     stock_data: dict[str, dict],
     run_date: str,
+    screen_results: list[dict] | None = None,
 ) -> str:
     rows = ""
     for i, s in enumerate(scores, 1):
@@ -110,6 +112,25 @@ def _build_email_html(
           <td style="padding:10px 14px;text-align:right;font-size:12px">{rev}</td>
         </tr>"""
 
+    # Build named screen sections HTML
+    screen_sections_html = ""
+    for screen in (screen_results or []):
+        sym_list = screen.get("symbols", [])
+        if not sym_list:
+            continue
+        screen_name = screen.get("name", screen.get("id", ""))
+        count = len(sym_list)
+        sym_display = ", ".join(sym_list[:20])
+        if count > 20:
+            sym_display += f" ... +{count - 20} more"
+        screen_sections_html += f"""
+<div style="margin-top:20px; padding: 0 28px 20px">
+  <div style="font-weight:700; font-size:13px; color:#1a1a2e; border-left:3px solid #63b3ed; padding-left:10px; margin-bottom:10px">
+    {screen_name} &mdash; {count} stocks
+  </div>
+  <div style="font-size:12px; color:#4a5568; line-height:1.8">{sym_display}</div>
+</div>"""
+
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 <div style="max-width:900px;margin:24px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
   <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:24px 28px;color:white">
@@ -135,7 +156,7 @@ def _build_email_html(
       </thead>
       <tbody>{rows}</tbody>
     </table>
-  </div>
+  </div>{screen_sections_html}
   <div style="background:#f7faff;padding:16px 28px;font-size:11px;color:#718096;text-align:center">
     Full details in the attached CSV &nbsp;·&nbsp; NSE Stock Analysis Agent &nbsp;·&nbsp; Not investment advice.
   </div>
