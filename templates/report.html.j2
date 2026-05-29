@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSE Daily Analysis — {{ run_date }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 28px 36px; }
+  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+  .header .meta { font-size: 13px; color: #a0aec0; margin-top: 6px; }
+  .header .stats { display: flex; gap: 32px; margin-top: 18px; }
+  .stat { }
+  .stat .val { font-size: 28px; font-weight: 700; color: #63b3ed; }
+  .stat .lbl { font-size: 11px; color: #718096; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #4a5568; margin-bottom: 14px; border-left: 3px solid #63b3ed; padding-left: 10px; }
+  /* Summary table */
+  .table-wrap { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 32px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: #1a1a2e; color: #a0aec0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; padding: 11px 14px; text-align: left; }
+  thead th.num { text-align: right; }
+  tbody tr { border-bottom: 1px solid #f0f2f5; transition: background 0.15s; }
+  tbody tr:hover { background: #f7faff; }
+  tbody tr:last-child { border-bottom: none; }
+  td { padding: 11px 14px; vertical-align: middle; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .rank { width: 36px; font-weight: 700; color: #a0aec0; font-size: 12px; }
+  .rank.top3 { color: #d4a017; }
+  .symbol { font-weight: 700; font-size: 13px; color: #1a1a2e; }
+  .company { font-size: 11px; color: #718096; margin-top: 2px; }
+  .sector-badge { display: inline-block; background: #ebf4ff; color: #2b6cb0; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; }
+  /* Score bars */
+  .score-cell { min-width: 90px; }
+  .score-val { font-weight: 700; font-size: 14px; }
+  .score-bar-wrap { height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 4px; }
+  .score-bar { height: 4px; border-radius: 2px; }
+  .bar-composite { background: #4299e1; }
+  .bar-growth   { background: #48bb78; }
+  .bar-quality  { background: #9f7aea; }
+  .bar-momentum { background: #ed8936; }
+  .bar-risk     { background: #fc8181; }
+  /* Color scale for composite */
+  .score-high { color: #276749; }
+  .score-mid  { color: #744210; }
+  .score-low  { color: #742a2a; }
+  /* Stock cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; margin-bottom: 32px; }
+  .card { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 20px; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .card-symbol { font-size: 17px; font-weight: 800; }
+  .card-name { font-size: 11px; color: #718096; margin-top: 2px; }
+  .card-composite { font-size: 22px; font-weight: 800; }
+  .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .score-item label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #718096; display: block; margin-bottom: 3px; }
+  .score-item .val { font-size: 15px; font-weight: 700; }
+  .divider { height: 1px; background: #f0f2f5; margin: 12px 0; }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .metric label { font-size: 10px; color: #718096; display: block; }
+  .metric .val { font-size: 12px; font-weight: 600; }
+  .rule-fail { font-size: 11px; color: #c53030; background: #fff5f5; padding: 8px 12px; border-radius: 6px; margin-top: 10px; }
+  /* Footer */
+  .footer { text-align: center; font-size: 11px; color: #a0aec0; padding: 20px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>NSE Daily Stock Analysis</h1>
+  <div class="meta">Generated on {{ run_date }} &nbsp;·&nbsp; Universe: {{ total_universe }} stocks &nbsp;·&nbsp; Passed screening: {{ passed_screen }}</div>
+  <div class="stats">
+    <div class="stat"><div class="val">{{ top_stock }}</div><div class="lbl">Top Pick</div></div>
+    <div class="stat"><div class="val">{{ top_score }}</div><div class="lbl">Top Score</div></div>
+    <div class="stat"><div class="val">{{ passed_screen }}</div><div class="lbl">Screened In</div></div>
+    <div class="stat"><div class="val">{{ total_universe }}</div><div class="lbl">Universe</div></div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Summary table -->
+  <div class="section-title">Ranked Stocks</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Stock</th>
+          <th>Sector</th>
+          <th class="num">Composite</th>
+          <th class="num">Growth</th>
+          <th class="num">Quality</th>
+          <th class="num">Momentum</th>
+          <th class="num">Risk</th>
+          <th class="num">Mkt Cap (Cr)</th>
+          <th class="num">PE</th>
+          <th class="num">ROE 5yr</th>
+          <th class="num">Rev CAGR 3yr</th>
+          <th class="num">RSI</th>
+          <th class="num">vs SMA200</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in stocks %}
+        <tr>
+          <td class="rank {% if loop.index <= 3 %}top3{% endif %}">{{ loop.index }}</td>
+          <td>
+            <div class="symbol">{{ s.symbol }}</div>
+            <div class="company">{{ s.company_name }}</div>
+          </td>
+          <td><span class="sector-badge">{{ s.sector or '—' }}</span></td>
+          <td class="num score-cell">
+            <div class="score-val {% if s.composite >= 55 %}score-high{% elif s.composite >= 40 %}score-mid{% else %}score-low{% endif %}">{{ "%.1f"|format(s.composite) }}</div>
+            <div class="score-bar-wrap"><div class="score-bar bar-composite" style="width:{{ s.composite }}%"></div></div>
+          </td>
+          <td class="num score-cell">
+            <div class="score-val">{{ "%.1f"|format(s.growth) }}</div>
+            <div class="score-bar-wrap"><div class="score-bar bar-growth" style="width:{{ s.growth }}%"></div></div>
+          </td>
+          <td class="num score-cell">
+            <div class="score-val">{{ "%.1f"|format(s.quality) }}</div>
+            <div class="score-bar-wrap"><div class="score-bar bar-quality" style="width:{{ s.quality }}%"></div></div>
+          </td>
+          <td class="num score-cell">
+            <div class="score-val">{{ "%.1f"|format(s.momentum) }}</div>
+            <div class="score-bar-wrap"><div class="score-bar bar-momentum" style="width:{{ s.momentum }}%"></div></div>
+          </td>
+          <td class="num score-cell">
+            <div class="score-val">{{ "%.1f"|format(s.risk) }}</div>
+            <div class="score-bar-wrap"><div class="score-bar bar-risk" style="width:{{ s.risk }}%"></div></div>
+          </td>
+          <td class="num">{{ s.market_cap_cr | fmt_num }}</td>
+          <td class="num">{{ s.pe_ratio | fmt_num }}</td>
+          <td class="num">{{ s.roe_5yr | fmt_pct }}</td>
+          <td class="num">{{ s.rev_cagr | fmt_pct }}</td>
+          <td class="num">{{ s.rsi | fmt_num }}</td>
+          <td class="num {% if s.vs_sma200 and s.vs_sma200 >= 0 %}score-high{% elif s.vs_sma200 %}score-low{% endif %}">{{ s.vs_sma200 | fmt_pct }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Detail cards (top N) -->
+  <div class="section-title">Stock Detail Cards — Top {{ stocks[:card_limit]|length }}</div>
+  <div class="cards">
+  {% for s in stocks[:card_limit] %}
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-symbol">{{ s.symbol }}</div>
+          <div class="card-name">{{ s.company_name }}</div>
+          <div style="margin-top:6px"><span class="sector-badge">{{ s.sector or '—' }}</span></div>
+        </div>
+        <div class="card-composite {% if s.composite >= 55 %}score-high{% elif s.composite >= 40 %}score-mid{% else %}score-low{% endif %}">{{ "%.1f"|format(s.composite) }}</div>
+      </div>
+
+      <div class="score-grid">
+        <div class="score-item">
+          <label>Growth</label>
+          <div class="val" style="color:#48bb78">{{ "%.1f"|format(s.growth) }}</div>
+          <div class="score-bar-wrap"><div class="score-bar bar-growth" style="width:{{ s.growth }}%"></div></div>
+        </div>
+        <div class="score-item">
+          <label>Quality</label>
+          <div class="val" style="color:#9f7aea">{{ "%.1f"|format(s.quality) }}</div>
+          <div class="score-bar-wrap"><div class="score-bar bar-quality" style="width:{{ s.quality }}%"></div></div>
+        </div>
+        <div class="score-item">
+          <label>Momentum</label>
+          <div class="val" style="color:#ed8936">{{ "%.1f"|format(s.momentum) }}</div>
+          <div class="score-bar-wrap"><div class="score-bar bar-momentum" style="width:{{ s.momentum }}%"></div></div>
+        </div>
+        <div class="score-item">
+          <label>Risk</label>
+          <div class="val" style="color:#fc8181">{{ "%.1f"|format(s.risk) }}</div>
+          <div class="score-bar-wrap"><div class="score-bar bar-risk" style="width:{{ s.risk }}%"></div></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="metrics">
+        <div class="metric"><label>Mkt Cap</label><div class="val">{{ s.market_cap_cr | fmt_cr }}</div></div>
+        <div class="metric"><label>PE Ratio</label><div class="val">{{ s.pe_ratio | fmt_num }}</div></div>
+        <div class="metric"><label>ROE 5yr</label><div class="val">{{ s.roe_5yr | fmt_pct }}</div></div>
+        <div class="metric"><label>Rev CAGR 3yr</label><div class="val">{{ s.rev_cagr | fmt_pct }}</div></div>
+        <div class="metric"><label>PAT CAGR 3yr</label><div class="val">{{ s.pat_cagr | fmt_pct }}</div></div>
+        <div class="metric"><label>D/E Ratio</label><div class="val">{{ s.debt_equity | fmt_num }}</div></div>
+        <div class="metric"><label>RSI (14)</label><div class="val">{{ s.rsi | fmt_num }}</div></div>
+        <div class="metric"><label>vs SMA200</label><div class="val">{{ s.vs_sma200 | fmt_pct }}</div></div>
+        <div class="metric"><label>52w High %</label><div class="val">{{ s.pct_52w | fmt_pct }}</div></div>
+      </div>
+
+      {% if s.growth_expl or s.quality_expl %}
+      <div class="divider"></div>
+      <div style="font-size:11px; color:#718096; line-height:1.6">
+        {% if s.growth_expl %}<div><strong>Growth:</strong> {{ s.growth_expl }}</div>{% endif %}
+        {% if s.quality_expl %}<div><strong>Quality:</strong> {{ s.quality_expl }}</div>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+
+</div>
+
+<div class="footer">NSE Stock Analysis Agent &nbsp;·&nbsp; {{ run_date }} &nbsp;·&nbsp; Data: yfinance + Screener.in &nbsp;·&nbsp; Not investment advice.</div>
+</body>
+</html>

@@ -1,0 +1,57 @@
+app:
+  name: "NSE Stock Analysis Agent"
+  version: "1.0.0"
+  timezone: "Asia/Kolkata"
+  run_time: "18:30"        # 6:30 PM IST, 1 hour after NSE market close
+  log_level: "INFO"
+  log_dir: "logs"
+
+data:
+  cache_dir: "data/cache"
+  reports_dir: "data/reports"
+  universe_dir: "data/universe"
+  ohlcv_ttl_hours: 24
+  fundamentals_yfinance_ttl_hours: 24
+  fundamentals_screener_ttl_hours: 168    # 7 days — Screener.in is slow, scrape weekly
+  news_ttl_hours: 4
+  ai_analysis_ttl_hours: 24
+
+fetching:
+  max_concurrent_requests: 10
+  request_timeout_seconds: 30
+  max_retries: 3
+  retry_backoff_factor: 2.0
+
+ai:
+  model: "claude-opus-4-5"          # Deep analysis: filings + thesis
+  model_fast: "claude-haiku-4-5-20251001"     # News sentiment (cheap + fast)
+  max_tokens_filing: 2048
+  max_tokens_news: 512
+  max_tokens_thesis: 1024
+  use_batch_api: true
+  batch_poll_interval_seconds: 60
+  batch_max_wait_hours: 2
+  ai_analysis_top_n: 100            # Run AI only on top N stocks post-screen
+
+output:
+  html_enabled: true
+  csv_enabled: true
+  email_enabled: true
+  top_n_in_report: 50
+  top_n_in_email: 15
+
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_use_tls: true
+  smtp_user_env_var: "EMAIL_USER"
+  smtp_pass_env_var: "EMAIL_PASSWORD"
+  from_address: "stock-analysis@gmail.com"
+  to_addresses:
+    - "saurabh.siddhartha0@gmail.com"
+  subject_template: "NSE Daily Analysis — {date} — Top: {top_stocks}"
+
+apis:
+  anthropic_key_env_var: "ANTHROPIC_API_KEY"
+  newsapi_key_env_var: "NEWS_API_KEY"           # optional
+  zerodha_api_key_env_var: "KITE_API_KEY"       # optional
