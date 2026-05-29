@@ -82,10 +82,17 @@ _NIFTY50_SYMBOLS = [
 ]
 
 
-def fetch_universe(cfg: UniverseConfig, universe_dir: Path) -> pd.DataFrame:
+def fetch_universe(
+    cfg: UniverseConfig,
+    universe_dir: Path,
+    config_dir: Path | None = None,
+) -> pd.DataFrame:
     """
     Download the stock universe from NSE and save to universe_dir/nse_all_symbols.csv.
-    Falls back to hardcoded Nifty 50 if NSE API is unreachable.
+    Fallback priority:
+      1. NSE API (usually geo-blocked)
+      2. config/nifty500.csv bundled in the repo
+      3. Hardcoded Nifty 50 (emergency only)
     """
     universe_dir.mkdir(parents=True, exist_ok=True)
     out_path = universe_dir / "nse_all_symbols.csv"
@@ -99,9 +106,15 @@ def fetch_universe(cfg: UniverseConfig, universe_dir: Path) -> pd.DataFrame:
             logger.info(f"Fetching universe from NSE index: {cfg.limit_to_index}")
             df = _try_nse_api(index_url)
 
+    # Fallback 1: bundled nifty500.csv
     if df is None or df.empty:
-        logger.warning("NSE API unreachable — using hardcoded Nifty 50 fallback")
-        df = _nifty50_fallback()
+        csv_path = (config_dir / "nifty500.csv") if config_dir else None
+        if csv_path and csv_path.exists():
+            logger.info(f"NSE API unreachable — loading bundled Nifty 500 list from {csv_path}")
+            df = _load_nifty500_csv(csv_path)
+        else:
+            logger.warning("NSE API unreachable and nifty500.csv not found — using hardcoded Nifty 50 fallback")
+            df = _nifty50_fallback()
 
     df = _normalise_columns(df)
     df.to_csv(out_path, index=False)
@@ -145,6 +158,27 @@ def _try_nse_api(index_url: str) -> pd.DataFrame | None:
         return None
 
 
+def _load_nifty500_csv(path: Path) -> pd.DataFrame | None:
+    """Load the bundled nifty500.csv (NSE Indices format).
+    Columns: Company Name, Industry, Symbol, Series, ISIN Code
+    """
+    try:
+        df = pd.read_csv(path, dtype=str).fillna("")
+        # NSE Indices CSV columns
+        df = df.rename(columns={
+            "Company Name": "name",
+            "Industry":     "sector",
+            "Symbol":       "symbol",
+        })
+        df["industry"] = df["sector"]   # industry == sector in this source
+        df = df[df["Series"].str.strip().str.upper() == "EQ"]  # EQ series only
+        logger.info(f"Loaded {len(df)} EQ stocks from {path.name}")
+        return df[["symbol", "name", "sector", "industry"]]
+    except Exception as e:
+        logger.warning(f"Could not load {path}: {e}")
+        return None
+
+
 def _nifty50_fallback() -> pd.DataFrame:
     return pd.DataFrame(
         _NIFTY50_SYMBOLS,
@@ -166,13 +200,21 @@ def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df[["symbol", "name", "sector", "industry"]]
 
 
-def load_cached_universe(universe_dir: Path) -> pd.DataFrame:
+def load_cached_universe(
+    universe_dir: Path,
+    config_dir: Path | None = None,
+) -> pd.DataFrame:
     """Load the previously saved universe CSV without hitting NSE."""
     path = universe_dir / "nse_all_symbols.csv"
     if not path.exists():
-        logger.warning("No cached universe found — generating Nifty 50 fallback")
-        df = _normalise_columns(_nifty50_fallback())
         path.parent.mkdir(parents=True, exist_ok=True)
+        csv_path = (config_dir / "nifty500.csv") if config_dir else None
+        if csv_path and csv_path.exists():
+            logger.warning("No cached universe — loading from bundled nifty500.csv")
+            df = _normalise_columns(_load_nifty500_csv(csv_path))
+        else:
+            logger.warning("No cached universe found — generating Nifty 50 fallback")
+            df = _normalise_columns(_nifty50_fallback())
         df.to_csv(path, index=False)
         return df
     return pd.read_csv(path, dtype=str).fillna("")
