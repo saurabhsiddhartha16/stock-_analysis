@@ -1,43 +1,38 @@
 version: "1.0"
 
-# Composite score = growth_weight * growth_score
-#                 + momentum_weight * momentum_score
-#                 + quality_weight * quality_score
-#                 + risk_weight * risk_score     ← negative (penalizes risk)
-#
-# All individual scores are 0-100 (higher = better for growth/momentum/quality;
-# higher = riskier for risk_score).
+# Composite = growth(0.30) + quality(0.25) + valuation(0.20) + momentum(0.15) - risk(0.20)
+# All individual scores 0-100. Valuation: higher = cheaper = better.
+# Risk: higher = riskier (subtracted).
 
 default_weights:
-  growth_score: 0.35
-  momentum_score: 0.25
-  quality_score: 0.30
-  risk_score: -0.20     # Negative: high risk subtracts from composite
+  growth_score: 0.30
+  quality_score: 0.25
+  valuation_score: 0.20
+  momentum_score: 0.15
+  risk_score: -0.20
 
-# ── Growth score sub-weights ─────────────────────────────────────────────────
+# Growth sub-weights (analyst_revision_signal removed — no AI layer)
 growth_sub_weights:
-  revenue_cagr_3yr: 0.30
-  pat_cagr_3yr: 0.30
-  eps_cagr_3yr: 0.25
-  analyst_revision_signal: 0.15   # AI output: +1 upgrade / 0 neutral / -1 downgrade
+  revenue_cagr_3yr: 0.35
+  pat_cagr_3yr: 0.35
+  eps_cagr_3yr: 0.30
 
-# ── Risk score sub-weights ───────────────────────────────────────────────────
+# Risk sub-weights (auditor_qualification_flag removed — no AI layer)
 risk_sub_weights:
-  debt_equity_normalized: 0.25
-  interest_coverage_inverted: 0.20
-  beta_normalized: 0.20
+  debt_equity_normalized: 0.30
+  interest_coverage_inverted: 0.25
+  beta_normalized: 0.25
   promoter_pledge_pct: 0.20
-  auditor_qualification_flag: 0.15
 
-# ── Quality score sub-weights ────────────────────────────────────────────────
+# Quality sub-weights
 quality_sub_weights:
-  roe_consistency: 0.25          # Mean ROE / (1 + stddev/mean) over 5 years
-  roce_vs_wacc_spread: 0.25      # ROCE minus assumed 12% WACC
-  fcf_conversion_ratio: 0.25     # FCF / PAT
-  working_capital_trend: 0.15    # YoY improvement in working-capital days
+  roe_consistency: 0.25
+  roce_vs_wacc_spread: 0.25
+  fcf_conversion_ratio: 0.25
+  working_capital_trend: 0.15
   cash_to_market_cap: 0.10
 
-# ── Momentum score sub-weights ───────────────────────────────────────────────
+# Momentum sub-weights
 momentum_sub_weights:
   price_vs_sma50_pct: 0.20
   price_vs_sma200_pct: 0.20
@@ -45,31 +40,78 @@ momentum_sub_weights:
   macd_signal_alignment: 0.15
   relative_strength_vs_nifty50_3m: 0.30
 
-# ── Sector-specific weight overrides ─────────────────────────────────────────
+# Valuation sub-weights (higher score = cheaper = better)
+valuation_sub_weights:
+  peg_ratio: 0.50
+  p_fcf: 0.35
+  pb_ratio: 0.15
+
+# Sector-specific weight overrides
 sector_overrides:
   BFSI:
-    growth_score: 0.40
-    quality_score: 0.35
-    risk_score: -0.15             # Leverage is structural; penalize less
+    growth_score: 0.35
+    quality_score: 0.30
+    valuation_score: 0.15
+    momentum_score: 0.10
+    risk_score: -0.10
     risk_sub_weights:
       debt_equity_normalized: 0.10
       interest_coverage_inverted: 0.05
-      beta_normalized: 0.25
-      promoter_pledge_pct: 0.30
-      auditor_qualification_flag: 0.30
+      beta_normalized: 0.30
+      promoter_pledge_pct: 0.55
+
+  Financial Services:
+    growth_score: 0.35
+    quality_score: 0.30
+    valuation_score: 0.15
+    momentum_score: 0.10
+    risk_score: -0.10
+    risk_sub_weights:
+      debt_equity_normalized: 0.10
+      interest_coverage_inverted: 0.05
+      beta_normalized: 0.30
+      promoter_pledge_pct: 0.55
 
   IT:
-    momentum_score: 0.30
+    valuation_score: 0.20
+    momentum_score: 0.20
     quality_sub_weights:
-      cash_to_market_cap: 0.20   # IT companies are cash-rich; reward more
+      cash_to_market_cap: 0.20
       roe_consistency: 0.25
       roce_vs_wacc_spread: 0.25
       fcf_conversion_ratio: 0.20
       working_capital_trend: 0.10
 
+  Fast Moving Consumer Goods:
+    growth_score: 0.25
+    quality_score: 0.30
+    valuation_score: 0.25
+    momentum_score: 0.10
+    risk_score: -0.10
+
+  Healthcare:
+    growth_score: 0.35
+    quality_score: 0.25
+    valuation_score: 0.20
+    momentum_score: 0.15
+    risk_score: -0.05
+    quality_sub_weights:
+      roe_consistency: 0.25
+      roce_vs_wacc_spread: 0.25
+      fcf_conversion_ratio: 0.20
+      working_capital_trend: 0.20
+      cash_to_market_cap: 0.10
+
+  Metals & Mining:
+    growth_score: 0.25
+    quality_score: 0.20
+    valuation_score: 0.25
+    momentum_score: 0.20
+    risk_score: -0.10
+
   Infrastructure:
     quality_sub_weights:
-      fcf_conversion_ratio: 0.15  # Long gestation projects; FCF less relevant early
+      fcf_conversion_ratio: 0.15
       working_capital_trend: 0.25
       roe_consistency: 0.25
       roce_vs_wacc_spread: 0.25

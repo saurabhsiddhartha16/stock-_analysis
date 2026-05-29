@@ -69,11 +69,17 @@ def _get_symbol_fundamentals(
 
     merged = {**_empty_fundamentals(), **yf_data, **screener_data}
 
-    # Compute ROA = PAT / Total Assets × 100
-    pat = merged.get("pat_ttm_cr")
-    assets = merged.get("total_assets_cr")
-    if pat and assets and assets > 0:
-        merged["roa"] = round(pat / assets * 100, 2)
+    # Compute ROA time-series from PAT / Total Assets each year
+    pat_series    = merged.get("pat_annual_series", [])
+    assets_series = merged.get("total_assets_series", [])
+    roa_series: list[float] = []
+    for pat, assets in zip(pat_series, assets_series):
+        if pat is not None and assets and assets > 0:
+            roa_series.append(round(pat / assets * 100, 2))
+    if roa_series:
+        merged["roa"]         = roa_series[0]
+        merged["roa_5yr_avg"] = round(sum(roa_series[:5]) / len(roa_series[:5]), 2) if len(roa_series) >= 5 else round(sum(roa_series) / len(roa_series), 2)
+        merged["roa_10yr_avg"]= round(sum(roa_series[:10]) / len(roa_series[:10]), 2) if len(roa_series) >= 10 else round(sum(roa_series) / len(roa_series), 2)
 
     cache.set_json("fundamentals", symbol, merged, yf_ttl)
     return merged
@@ -309,11 +315,13 @@ def _parse_pl_table(soup: BeautifulSoup) -> dict:
         result["revenue_cagr_3yr"] = _cagr(rev_rev, 3)
         result["revenue_cagr_5yr"] = _cagr(rev_rev, 5)
         result["revenue_ttm_cr"] = rev_rev[0] if rev_rev else None
+        result["revenue_annual_series"] = rev_rev
     if pat_values:
         pat_rev = list(reversed(pat_values))
         result["pat_cagr_3yr"] = _cagr(pat_rev, 3)
         result["pat_cagr_5yr"] = _cagr(pat_rev, 5)
         result["pat_ttm_cr"] = pat_rev[0] if pat_rev else None
+        result["pat_annual_series"] = pat_rev
 
     return result
 
@@ -346,7 +354,9 @@ def _parse_balance_sheet(soup: BeautifulSoup) -> dict:
         elif "cash" in label and "equivalent" in label:
             result["cash_cr"] = list(reversed(values))[0]
         elif "total assets" in label:
-            result["total_assets_cr"] = list(reversed(values))[0]
+            assets_series = list(reversed(values))
+            result["total_assets_cr"]     = assets_series[0] if assets_series else None
+            result["total_assets_series"] = assets_series
 
     return result
 
@@ -434,7 +444,12 @@ def _empty_fundamentals() -> dict:
         "industry_yf": None,
         "company_name": None,
         "roa": None,
+        "roa_5yr_avg": None,
+        "roa_10yr_avg": None,
         "total_assets_cr": None,
+        "total_assets_series": None,
+        "revenue_annual_series": None,
+        "pat_annual_series": None,
         "roce_5yr_avg": None,
         "roce_10yr_avg": None,
     }

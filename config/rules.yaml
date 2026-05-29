@@ -144,11 +144,16 @@ screens:
         op: gte
         value: 10
         description: "Revenue CAGR 5yr >= 10%"
-      - id: llt_roa
-        field: fundamentals.roa
+      - id: llt_rev_cagr_3yr
+        field: fundamentals.revenue_cagr_3yr
         op: gte
         value: 10
-        description: "ROA >= 10% (TTM)"
+        description: "Revenue CAGR 3yr >= 10% (consistency check)"
+      - id: llt_roa_5yr
+        field: fundamentals.roa_5yr_avg
+        op: gte
+        value: 10
+        description: "ROA 5yr avg >= 10%"
       - id: llt_roce
         field: fundamentals.roce_10yr_avg
         op: gte
@@ -173,13 +178,76 @@ screens:
         op: gte
         value: 10
         description: "Revenue CAGR 5yr >= 10%"
-      - id: lmt_roa
-        field: fundamentals.roa
+      - id: lmt_rev_cagr_3yr
+        field: fundamentals.revenue_cagr_3yr
         op: gte
         value: 10
-        description: "ROA >= 10% (TTM)"
+        description: "Revenue CAGR 3yr >= 10% (consistency check)"
+      - id: lmt_roa_5yr
+        field: fundamentals.roa_5yr_avg
+        op: gte
+        value: 10
+        description: "ROA 5yr avg >= 10%"
       - id: lmt_roce
         field: fundamentals.roce_10yr_avg
         op: gte
         value: 10
         description: "ROCE 10yr avg >= 10%"
+
+  - id: "bfsi_largecap_longterm"
+    name: "BFSI Large cap | Long term"
+    rules:
+      - id: bfsi_lt_sector
+        field: universe.sector
+        op: in
+        value: ["Financial Services"]
+        description: "BFSI sector filter"
+      - id: bfsi_lt_mktcap
+        field: fundamentals.market_cap_cr
+        op: gte
+        value: 10000
+        description: "Market cap >= 10,000 Cr"
+      - id: bfsi_lt_roe
+        field: fundamentals.roe_5yr_avg
+        op: gte
+        value: 15
+        description: "ROE 5yr avg >= 15% (BFSI quality threshold)"
+      - id: bfsi_lt_rev
+        field: fundamentals.revenue_cagr_5yr
+        op: gte
+        value: 10
+        description: "Revenue CAGR 5yr >= 10%"
+      - id: bfsi_lt_sma200
+        field: technicals.price_vs_sma200_pct
+        op: gte
+        value: 0
+        description: "Price above 200-day moving average"
+
+  - id: "bfsi_largecap_medterm"
+    name: "BFSI Large cap | Medium term"
+    rules:
+      - id: bfsi_mt_sector
+        field: universe.sector
+        op: in
+        value: ["Financial Services"]
+        description: "BFSI sector filter"
+      - id: bfsi_mt_mktcap
+        field: fundamentals.market_cap_cr
+        op: gte
+        value: 10000
+        description: "Market cap >= 10,000 Cr"
+      - id: bfsi_mt_roe
+        field: fundamentals.roe_5yr_avg
+        op: gte
+        value: 15
+        description: "ROE 5yr avg >= 15%"
+      - id: bfsi_mt_rev
+        field: fundamentals.revenue_cagr_5yr
+        op: gte
+        value: 10
+        description: "Revenue CAGR 5yr >= 10%"
+      - id: bfsi_mt_sma50
+        field: technicals.price_vs_sma50_pct
+        op: gte
+        value: 0
+        description: "Price above 50-day moving average"
