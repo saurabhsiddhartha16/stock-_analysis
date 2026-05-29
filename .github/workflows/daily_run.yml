@@ -1,0 +1,98 @@
+name: Daily Stock Analysis
+
+on:
+  schedule:
+    # 2:30 AM UTC = 8:00 AM IST (UTC+5:30) — runs every day
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    # Allows manual trigger from GitHub Actions tab
+    inputs:
+      date:
+        description: "Run date (YYYY-MM-DD). Leave blank for today."
+        required: false
+        default: ""
+      mode:
+        description: "Pipeline mode"
+        required: false
+        default: "full"
+        type: choice
+        options:
+          - full
+          - screen
+          - data-only
+          - universe-only
+
+jobs:
+  analyse:
+    name: NSE Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 90        # hard ceiling — Screener scrape of 500 stocks ~40 min
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Python 3.12 ───────────────────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── 3. Pip cache (speeds up installs on repeat runs) ─────────────────────
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # ── 4. Install dependencies ───────────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install -e ".[dev]" --quiet
+
+      # ── 5. Write .env from GitHub Secrets ────────────────────────────────────
+      - name: Create .env file
+        run: |
+          echo "EMAIL_USER=${{ secrets.EMAIL_USER }}" >> .env
+          echo "EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}" >> .env
+
+      # ── 6. Resolve run date ───────────────────────────────────────────────────
+      - name: Set run date
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            echo "run_date=${{ github.event.inputs.date }}" >> $GITHUB_OUTPUT
+          else
+            echo "run_date=$(date -u '+%Y-%m-%d')" >> $GITHUB_OUTPUT
+          fi
+
+      # ── 7. Run the pipeline ───────────────────────────────────────────────────
+      - name: Run stock analysis pipeline
+        run: |
+          MODE="${{ github.event.inputs.mode || 'full' }}"
+          python -m stock_analysis.main \
+            --date "${{ steps.date.outputs.run_date }}" \
+            --mode "$MODE" \
+            --no-resume
+
+      # ── 8. Upload HTML report as artifact (downloadable from Actions tab) ────
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ steps.date.outputs.run_date }}
+          path: data/reports/html/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ── 9. Upload logs on failure for debugging ───────────────────────────────
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ steps.date.outputs.run_date }}
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 7
