@@ -123,3 +123,63 @@ sector_overrides:
       value: 10.0       # Banks have structurally high leverage — relax threshold
     positive_fcf:
       enabled: false    # FCF concept doesn't map cleanly to banking businesses
+
+# ── Named screens (applied post-scoring to produce labelled sections) ─────────
+screens:
+  - id: "largecap_longterm"
+    name: "Large cap opportunities | Long term"
+    rules:
+      - id: llt_mktcap
+        field: fundamentals.market_cap_cr
+        op: gte
+        value: 10000
+        description: "Market cap >= 10,000 Cr (large cap)"
+      - id: llt_sma200
+        field: technicals.price_vs_sma200_pct
+        op: gte
+        value: 0
+        description: "Price above 200-day moving average"
+      - id: llt_rev_cagr
+        field: fundamentals.revenue_cagr_5yr
+        op: gte
+        value: 10
+        description: "Revenue CAGR 5yr >= 10%"
+      - id: llt_roa
+        field: fundamentals.roa
+        op: gte
+        value: 10
+        description: "ROA >= 10% (TTM)"
+      - id: llt_roce
+        field: fundamentals.roce_10yr_avg
+        op: gte
+        value: 10
+        description: "ROCE 10yr avg >= 10%"
+
+  - id: "largecap_medterm"
+    name: "Large cap opportunities | Medium term"
+    rules:
+      - id: lmt_mktcap
+        field: fundamentals.market_cap_cr
+        op: gte
+        value: 10000
+        description: "Market cap >= 10,000 Cr (large cap)"
+      - id: lmt_sma50
+        field: technicals.price_vs_sma50_pct
+        op: gte
+        value: 0
+        description: "Price above 50-day moving average"
+      - id: lmt_rev_cagr
+        field: fundamentals.revenue_cagr_5yr
+        op: gte
+        value: 10
+        description: "Revenue CAGR 5yr >= 10%"
+      - id: lmt_roa
+        field: fundamentals.roa
+        op: gte
+        value: 10
+        description: "ROA >= 10% (TTM)"
+      - id: lmt_roce
+        field: fundamentals.roce_10yr_avg
+        op: gte
+        value: 10
+        description: "ROCE 10yr avg >= 10%"

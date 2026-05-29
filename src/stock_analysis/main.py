@@ -38,7 +38,7 @@ from stock_analysis.output.csv_export import export as export_csv
 from stock_analysis.output.email_digest import send as send_email
 from stock_analysis.output.html_report import render as render_html
 from stock_analysis.scoring.composite import StockScore, score_all
-from stock_analysis.screening.engine import get_passing_symbols, run_screen
+from stock_analysis.screening.engine import get_passing_symbols, run_screen, run_screens
 from stock_analysis.universe.fetcher import fetch_universe, load_cached_universe
 from stock_analysis.universe.filter import apply_filters
 from stock_analysis.utils.logging_config import setup_logging
@@ -195,6 +195,10 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
         ]
         cache.set_json("run", f"scores_{run_date}", scores_payload, ttl_hours=24)
 
+        # Run named screens across ALL symbols (not just screened subset)
+        screen_results = run_screens(symbols, stock_data, rules_cfg)
+        cache.set_json("run", f"screen_sections_{run_date}", screen_results, ttl_hours=24)
+
         # Export CSV immediately
         csv_path: Path | None = None
         if settings.output.csv_enabled:
@@ -215,6 +219,7 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
         csv_path = reports_dir / "csv" / f"{run_date}.csv"
         if not csv_path.exists():
             csv_path = None
+        screen_results = cache.get_json("run", f"screen_sections_{run_date}") or []
         logger.info(f"  ✓ Scoring (cached): {len(ranked)} stocks ranked")
 
     if mode == "screen":
@@ -238,6 +243,7 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
                 templates_dir=templates_dir,
                 run_date=run_date,
                 card_limit=settings.output.top_n_in_report,
+                screen_results=screen_results,
             )
             logger.info(f"  HTML: {html_path}")
 
@@ -249,6 +255,7 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
                 email_cfg=settings.email,
                 run_date=run_date,
                 top_n=settings.output.top_n_in_email,
+                screen_results=screen_results,
             )
 
         completed.add("OUTPUT")

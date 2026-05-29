@@ -68,6 +68,13 @@ def _get_symbol_fundamentals(
     screener_data = _fetch_screener(symbol, cache, screener_ttl)
 
     merged = {**_empty_fundamentals(), **yf_data, **screener_data}
+
+    # Compute ROA = PAT / Total Assets × 100
+    pat = merged.get("pat_ttm_cr")
+    assets = merged.get("total_assets_cr")
+    if pat and assets and assets > 0:
+        merged["roa"] = round(pat / assets * 100, 2)
+
     cache.set_json("fundamentals", symbol, merged, yf_ttl)
     return merged
 
@@ -257,6 +264,8 @@ def _parse_ratio_table(soup: BeautifulSoup) -> dict:
             result["roe_5yr_avg"] = round(sum(values[:5]) / len(values[:5]), 2) if len(values) >= 5 else values[0]
         elif "roce" in label:
             result["roce"] = values[0]
+            result["roce_5yr_avg"] = round(sum(values[:5]) / len(values[:5]), 2) if len(values) >= 5 else values[0]
+            result["roce_10yr_avg"] = round(sum(values) / len(values), 2) if values else None
         elif "debt" in label and "equity" in label:
             result["debt_equity"] = values[0]
         elif "interest coverage" in label:
@@ -336,6 +345,8 @@ def _parse_balance_sheet(soup: BeautifulSoup) -> dict:
             result["equity_capital_cr"] = list(reversed(values))[0]
         elif "cash" in label and "equivalent" in label:
             result["cash_cr"] = list(reversed(values))[0]
+        elif "total assets" in label:
+            result["total_assets_cr"] = list(reversed(values))[0]
 
     return result
 
@@ -422,4 +433,8 @@ def _empty_fundamentals() -> dict:
         "sector_yf": None,
         "industry_yf": None,
         "company_name": None,
+        "roa": None,
+        "total_assets_cr": None,
+        "roce_5yr_avg": None,
+        "roce_10yr_avg": None,
     }

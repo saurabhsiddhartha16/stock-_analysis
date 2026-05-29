@@ -124,10 +124,17 @@ class Rule(BaseModel):
         return v
 
 
+class Screen(BaseModel):
+    id: str
+    name: str
+    rules: list[Rule] = []
+
+
 class RulesConfig(BaseModel):
     version: str = "1.0"
     rules: list[Rule] = []
     sector_overrides: dict[str, dict[str, Any]] = {}
+    screens: list[Screen] = []
 
 
 # ── scoring_weights.yaml ──────────────────────────────────────────────────────
