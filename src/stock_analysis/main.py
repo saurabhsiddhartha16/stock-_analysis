@@ -83,10 +83,10 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
         logger.info("▶ Stage 1: UNIVERSE")
         universe_dir = Path(settings.data.universe_dir)
         try:
-            raw_universe = fetch_universe(universe_cfg, universe_dir)
+            raw_universe = fetch_universe(universe_cfg, universe_dir, config_dir=_CONFIG_DIR)
         except Exception as e:
             logger.warning(f"Live fetch failed ({e}); using cached universe")
-            raw_universe = load_cached_universe(universe_dir)
+            raw_universe = load_cached_universe(universe_dir, config_dir=_CONFIG_DIR)
         universe_df = apply_filters(raw_universe, universe_cfg)
         symbols = universe_df["symbol"].tolist()
         universe_meta = universe_df.set_index("symbol").to_dict("index")
