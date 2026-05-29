@@ -55,6 +55,8 @@ def _build_stock_context(s: StockScore, stock_data: dict) -> dict:
         "composite": s.composite,
         "growth": s.growth,
         "quality": s.quality,
+        "valuation": s.valuation,
+        "valuation_expl": s.explanations.get("valuation", ""),
         "momentum": s.momentum,
         "risk": s.risk,
         "market_cap_cr": f.get("market_cap_cr"),
@@ -70,6 +72,7 @@ def _build_stock_context(s: StockScore, stock_data: dict) -> dict:
         "quality_expl": s.explanations.get("quality", ""),
         "roce": f.get("roce"),
         "roa": f.get("roa"),
+        "roa_5yr_avg": f.get("roa_5yr_avg"),
         "rev_cagr_5yr": f.get("revenue_cagr_5yr"),
     }
 

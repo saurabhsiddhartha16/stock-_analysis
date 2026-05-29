@@ -143,6 +143,7 @@ class DefaultWeights(BaseModel):
     growth_score: float = 0.35
     momentum_score: float = 0.25
     quality_score: float = 0.30
+    valuation_score: float = 0.20
     risk_score: float = -0.20
 
 
@@ -152,6 +153,7 @@ class ScoringWeightsConfig(BaseModel):
     growth_sub_weights: dict[str, float] = {}
     risk_sub_weights: dict[str, float] = {}
     quality_sub_weights: dict[str, float] = {}
+    valuation_sub_weights: dict[str, float] = {}
     momentum_sub_weights: dict[str, float] = {}
     sector_overrides: dict[str, Any] = {}
 
