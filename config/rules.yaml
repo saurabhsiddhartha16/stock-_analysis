@@ -1,0 +1,125 @@
+version: "1.0"
+
+# Screening rules — ALL enabled rules must pass (AND logic by default).
+# Each rule:
+#   id:          unique identifier
+#   field:       dot-notation path into stock data (see field reference below)
+#   op:          gt | lt | gte | lte | eq | neq | between | in | not_in
+#   value:       threshold (scalar, list, or [min, max] for "between")
+#   description: human-readable label shown in reports
+#   enabled:     true | false  (false = skip without deleting the rule)
+#
+# Field reference:
+#   fundamentals.market_cap_cr          Market cap in crore INR
+#   fundamentals.pe_ratio               Trailing PE ratio
+#   fundamentals.pb_ratio               Price-to-book
+#   fundamentals.roe_5yr_avg            5-year average ROE (%)
+#   fundamentals.roce                   Return on capital employed (%)
+#   fundamentals.revenue_cagr_3yr       3-year revenue CAGR (%)
+#   fundamentals.pat_cagr_3yr           3-year PAT/net-profit CAGR (%)
+#   fundamentals.eps_cagr_3yr           3-year EPS CAGR (%)
+#   fundamentals.debt_equity            Debt-to-equity ratio
+#   fundamentals.interest_coverage      Interest coverage ratio
+#   fundamentals.fcf_trailing_cr        Free cash flow trailing 12m (crore INR)
+#   fundamentals.promoter_holding_pct   Promoter holding (%)
+#   technicals.RSI_14                   14-day RSI
+#   technicals.price_vs_sma50_pct       % above/below 50-day SMA
+#   technicals.price_vs_sma200_pct      % above/below 200-day SMA
+#   technicals.volume_sma_20            20-day average daily volume (shares)
+#   universe.sector                     Sector string
+
+rules:
+  # ── Fundamental filters ──────────────────────────────────────────────────
+
+  - id: min_market_cap
+    field: fundamentals.market_cap_cr
+    op: gte
+    value: 500
+    description: "Market cap ≥ 500 crore INR"
+    enabled: true
+
+  - id: max_pe
+    field: fundamentals.pe_ratio
+    op: lte
+    value: 60
+    description: "PE ratio ≤ 60"
+    enabled: true
+
+  - id: min_roe
+    field: fundamentals.roe_5yr_avg
+    op: gte
+    value: 12.0
+    description: "5-year avg ROE ≥ 12%"
+    enabled: true
+
+  - id: min_revenue_growth
+    field: fundamentals.revenue_cagr_3yr
+    op: gte
+    value: 10.0
+    description: "3-year revenue CAGR ≥ 10%"
+    enabled: true
+
+  - id: min_pat_growth
+    field: fundamentals.pat_cagr_3yr
+    op: gte
+    value: 8.0
+    description: "3-year PAT CAGR ≥ 8%"
+    enabled: true
+
+  - id: max_debt_equity
+    field: fundamentals.debt_equity
+    op: lte
+    value: 2.0
+    description: "Debt/Equity ≤ 2.0"
+    enabled: true
+
+  - id: positive_fcf
+    field: fundamentals.fcf_trailing_cr
+    op: gte
+    value: 0
+    description: "Positive FCF (trailing 12m)"
+    enabled: true
+
+  # ── Technical filters ────────────────────────────────────────────────────
+
+  - id: price_near_or_above_200sma
+    field: technicals.price_vs_sma200_pct
+    op: gte
+    value: -5.0
+    description: "Price within 5% of or above 200-day SMA"
+    enabled: true
+
+  - id: rsi_not_overbought
+    field: technicals.RSI_14
+    op: lte
+    value: 75
+    description: "RSI ≤ 75 (not severely overbought)"
+    enabled: false    # Disable by default; enable for entry-timing runs
+
+  - id: min_avg_volume
+    field: technicals.volume_sma_20
+    op: gte
+    value: 50000
+    description: "20-day avg volume ≥ 50,000 shares (liquidity)"
+    enabled: true
+
+  # ── Sector filters ───────────────────────────────────────────────────────
+
+  - id: exclude_sectors
+    field: universe.sector
+    op: not_in
+    value:
+      - "Gambling"
+      - "Tobacco"
+      - "Alcohol"
+    description: "ESG sector exclusions"
+    enabled: true
+
+# ── Sector-specific overrides ────────────────────────────────────────────────
+# These replace the global rule value/enabled for matching sectors.
+sector_overrides:
+  BFSI:
+    max_debt_equity:
+      value: 10.0       # Banks have structurally high leverage — relax threshold
+    positive_fcf:
+      enabled: false    # FCF concept doesn't map cleanly to banking businesses

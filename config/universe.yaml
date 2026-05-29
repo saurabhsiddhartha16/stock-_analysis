@@ -1,0 +1,39 @@
+version: "1.0"
+
+# Primary data source for the universe
+# Options: "nse_equity_master" | "manual_list" | "index"
+source: "nse_equity_master"
+
+# Market cap tiers to include
+# large_cap: > 20,000 crore | mid_cap: 5,000-20,000 | small_cap: 500-5,000 | micro_cap: < 500
+include_market_cap_tiers:
+  - "large_cap"
+  - "mid_cap"
+  - "small_cap"
+
+# Sector filters — leave empty to include all sectors
+include_sectors: []
+
+exclude_sectors:
+  - "Gambling"
+  - "Tobacco"
+
+# Symbols to always include regardless of other filters
+always_include: []
+
+# Symbols to always exclude (distressed, suspended, etc.)
+always_exclude:
+  - "YESBANK"
+
+# Index shortcuts for quick testing
+# Uncomment limit_to_index to restrict the run to a specific index
+index_shortcuts:
+  nifty50:  "https://nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+  nifty200: "https://nseindia.com/api/equity-stockIndices?index=NIFTY%20200"
+  nifty500: "https://nseindia.com/api/equity-stockIndices?index=NIFTY%20500"
+
+# Restrict to an index (comment out to use full NSE universe)
+limit_to_index: "nifty500"
+
+# Hard cap on number of stocks analyzed per run
+max_stocks: 2000
