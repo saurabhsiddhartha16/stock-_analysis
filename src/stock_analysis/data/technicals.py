@@ -49,28 +49,45 @@ def get_latest_indicators(ohlcv: pd.DataFrame) -> dict:
         v = last[col]
         return float(v) if pd.notna(v) else None
 
+    # YTD return: first close of current calendar year → latest close
+    return_ytd: float | None = None
+    try:
+        current_year = ohlcv.index[-1].year
+        year_data    = ohlcv[ohlcv.index.year == current_year]["Close"].dropna()
+        if len(year_data) >= 2:
+            return_ytd = round((float(year_data.iloc[-1]) / float(year_data.iloc[0]) - 1) * 100, 2)
+    except Exception:
+        pass
+
     return {
-        "SMA_20": _val("SMA_20"),
-        "SMA_50": _val("SMA_50"),
+        "SMA_20":  _val("SMA_20"),
+        "SMA_50":  _val("SMA_50"),
         "SMA_200": _val("SMA_200"),
-        "EMA_20": _val("EMA_20"),
-        "EMA_50": _val("EMA_50"),
-        "RSI_14": _val("RSI_14"),
-        "MACD": _val("MACD"),
-        "MACD_signal": _val("MACD_signal"),
-        "MACD_hist": _val("MACD_hist"),
-        "BB_upper": _val("BB_upper"),
-        "BB_lower": _val("BB_lower"),
-        "ATR_14": _val("ATR_14"),
+        "EMA_20":  _val("EMA_20"),
+        "EMA_50":  _val("EMA_50"),
+        "EMA_200": _val("EMA_200"),
+        "RSI_14":  _val("RSI_14"),
+        "MACD":         _val("MACD"),
+        "MACD_signal":  _val("MACD_signal"),
+        "MACD_hist":    _val("MACD_hist"),
+        "BB_upper":     _val("BB_upper"),
+        "BB_lower":     _val("BB_lower"),
+        "ATR_14":       _val("ATR_14"),
         "volume_sma_20": _val("volume_sma_20"),
         "52w_high": _val("52w_high"),
-        "52w_low": _val("52w_low"),
-        "price_vs_sma50_pct": _val("price_vs_sma50_pct"),
-        "price_vs_sma200_pct": _val("price_vs_sma200_pct"),
-        "pct_from_52w_high": _val("pct_from_52w_high"),
-        "return_1m": _val("return_1m"),
-        "return_3m": _val("return_3m"),
-        "close": _val("Close"),
+        "52w_low":  _val("52w_low"),
+        "price_vs_sma50_pct":   _val("price_vs_sma50_pct"),
+        "price_vs_sma200_pct":  _val("price_vs_sma200_pct"),
+        "price_vs_ema50_pct":   _val("price_vs_ema50_pct"),
+        "price_vs_ema200_pct":  _val("price_vs_ema200_pct"),
+        "pct_from_52w_high":    _val("pct_from_52w_high"),
+        "return_1m":  _val("return_1m"),
+        "return_3m":  _val("return_3m"),
+        "return_ytd": return_ytd,
+        "return_3yr": _val("return_3yr"),
+        "return_5yr": _val("return_5yr"),
+        "return_10yr": _val("return_10yr"),
+        "close":  _val("Close"),
         "volume": _val("Volume"),
     }
 
@@ -171,12 +188,22 @@ def _compute_derived(df: pd.DataFrame) -> None:
         df["price_vs_sma50_pct"] = (close / df["SMA_50"] - 1) * 100
     if "SMA_200" in df.columns:
         df["price_vs_sma200_pct"] = (close / df["SMA_200"] - 1) * 100
+    if "EMA_50" in df.columns:
+        df["price_vs_ema50_pct"] = (close / df["EMA_50"] - 1) * 100
+    if "EMA_200" not in df.columns:
+        df["EMA_200"] = close.ewm(span=200, adjust=False).mean()
+    df["price_vs_ema200_pct"] = (close / df["EMA_200"] - 1) * 100
 
     # Rolling 52-week (252 trading days) high/low
     df["52w_high"] = close.rolling(252, min_periods=50).max()
-    df["52w_low"] = close.rolling(252, min_periods=50).min()
+    df["52w_low"]  = close.rolling(252, min_periods=50).min()
     df["pct_from_52w_high"] = (close / df["52w_high"] - 1) * 100
 
-    # Price returns (1m ≈ 21 trading days, 3m ≈ 63 trading days)
+    # Short-term returns (1m ≈ 21, 3m ≈ 63 trading days)
     df["return_1m"] = (close / close.shift(21) - 1) * 100
     df["return_3m"] = (close / close.shift(63) - 1) * 100
+
+    # Multi-year returns (252 ≈ 1yr, 756 ≈ 3yr, 1260 ≈ 5yr, 2520 ≈ 10yr)
+    df["return_3yr"]  = (close / close.shift(756)  - 1) * 100
+    df["return_5yr"]  = (close / close.shift(1260) - 1) * 100
+    df["return_10yr"] = (close / close.shift(2520) - 1) * 100

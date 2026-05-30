@@ -313,16 +313,31 @@ def _parse_pl_table(soup: BeautifulSoup) -> dict:
     # Screener shows oldest→latest, so reverse
     if rev_values:
         rev_rev = list(reversed(rev_values))
-        result["revenue_cagr_3yr"] = _cagr(rev_rev, 3)
-        result["revenue_cagr_5yr"] = _cagr(rev_rev, 5)
-        result["revenue_ttm_cr"] = rev_rev[0] if rev_rev else None
+        result["revenue_cagr_3yr"]  = _cagr(rev_rev, 3)
+        result["revenue_cagr_5yr"]  = _cagr(rev_rev, 5)
+        result["revenue_cagr_10yr"] = _cagr(rev_rev, 10)
+        # YoY growth: latest vs prior year
+        if len(rev_rev) >= 2 and rev_rev[1] and rev_rev[1] != 0:
+            result["revenue_yoy"] = round((rev_rev[0] / rev_rev[1] - 1) * 100, 2)
+        result["revenue_ttm_cr"]       = rev_rev[0] if rev_rev else None
         result["revenue_annual_series"] = rev_rev
     if pat_values:
         pat_rev = list(reversed(pat_values))
-        result["pat_cagr_3yr"] = _cagr(pat_rev, 3)
-        result["pat_cagr_5yr"] = _cagr(pat_rev, 5)
-        result["pat_ttm_cr"] = pat_rev[0] if pat_rev else None
+        result["pat_cagr_3yr"]  = _cagr(pat_rev, 3)
+        result["pat_cagr_5yr"]  = _cagr(pat_rev, 5)
+        result["pat_cagr_10yr"] = _cagr(pat_rev, 10)
+        # YoY growth: latest vs prior year
+        if len(pat_rev) >= 2 and pat_rev[1] and pat_rev[1] != 0:
+            result["pat_yoy"] = round((pat_rev[0] / pat_rev[1] - 1) * 100, 2)
+        result["pat_ttm_cr"]       = pat_rev[0] if pat_rev else None
         result["pat_annual_series"] = pat_rev
+
+    # Net profit margin (TTM) = PAT / Revenue
+    if rev_values and pat_values:
+        rev_rev_ = list(reversed(rev_values))
+        pat_rev_ = list(reversed(pat_values))
+        if rev_rev_[0] and rev_rev_[0] > 0:
+            result["npm_ttm"] = round(pat_rev_[0] / rev_rev_[0] * 100, 2)
 
     return result
 
@@ -426,11 +441,16 @@ def _empty_fundamentals() -> dict:
         "eps_ttm": None,
         "dividend_yield": None,
         "beta": None,
-        "revenue_cagr_3yr": None,
-        "revenue_cagr_5yr": None,
-        "pat_cagr_3yr": None,
-        "pat_cagr_5yr": None,
-        "eps_cagr_3yr": None,
+        "revenue_cagr_3yr":  None,
+        "revenue_cagr_5yr":  None,
+        "revenue_cagr_10yr": None,
+        "revenue_yoy":       None,
+        "pat_cagr_3yr":      None,
+        "pat_cagr_5yr":      None,
+        "pat_cagr_10yr":     None,
+        "pat_yoy":           None,
+        "npm_ttm":           None,
+        "eps_cagr_3yr":      None,
         "revenue_ttm_cr": None,
         "pat_ttm_cr": None,
         "roe_ttm": None,
