@@ -68,6 +68,8 @@ def get_latest_indicators(ohlcv: pd.DataFrame) -> dict:
         "price_vs_sma50_pct": _val("price_vs_sma50_pct"),
         "price_vs_sma200_pct": _val("price_vs_sma200_pct"),
         "pct_from_52w_high": _val("pct_from_52w_high"),
+        "return_1m": _val("return_1m"),
+        "return_3m": _val("return_3m"),
         "close": _val("Close"),
         "volume": _val("Volume"),
     }
@@ -174,3 +176,7 @@ def _compute_derived(df: pd.DataFrame) -> None:
     df["52w_high"] = close.rolling(252, min_periods=50).max()
     df["52w_low"] = close.rolling(252, min_periods=50).min()
     df["pct_from_52w_high"] = (close / df["52w_high"] - 1) * 100
+
+    # Price returns (1m ≈ 21 trading days, 3m ≈ 63 trading days)
+    df["return_1m"] = (close / close.shift(21) - 1) * 100
+    df["return_3m"] = (close / close.shift(63) - 1) * 100

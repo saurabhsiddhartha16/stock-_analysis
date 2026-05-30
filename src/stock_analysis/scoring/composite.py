@@ -15,6 +15,70 @@ from stock_analysis.scoring import (
 )
 
 
+# ── Sector normalisation ──────────────────────────────────────────────────────
+# Maps incoming sector strings (from nifty500.csv / yfinance) to the canonical
+# keys used in scoring_weights.yaml sector_overrides.
+_SECTOR_MAP: dict[str, str] = {
+    # Information Technology
+    "it": "Information Technology",
+    "software": "Information Technology",
+    "software & services": "Information Technology",
+    "it services": "Information Technology",
+    # Financial Services
+    "bfsi": "Financial Services",
+    "banking": "Financial Services",
+    "banks": "Financial Services",
+    "nbfc": "Financial Services",
+    "insurance": "Financial Services",
+    "non-banking financial company": "Financial Services",
+    "financial services": "Financial Services",
+    # Infrastructure / Construction
+    "construction": "Infrastructure",
+    "infrastructure": "Infrastructure",
+    "engineering": "Infrastructure",
+    # Metals & Mining
+    "metals": "Metals & Mining",
+    "mining": "Metals & Mining",
+    "metals & mining": "Metals & Mining",
+    # Healthcare / Pharma
+    "pharma": "Healthcare",
+    "pharmaceuticals": "Healthcare",
+    "healthcare": "Healthcare",
+    # FMCG / Consumer
+    "fmcg": "Fast Moving Consumer Goods",
+    "consumer staples": "Fast Moving Consumer Goods",
+    "fast moving consumer goods": "Fast Moving Consumer Goods",
+}
+
+
+def _normalise_sector(sector: str) -> str:
+    """Map raw sector string to canonical override key (case-insensitive)."""
+    return _SECTOR_MAP.get(sector.lower().strip(), sector)
+
+
+# ── Data completeness floor ───────────────────────────────────────────────────
+_KEY_METRICS = [
+    "pe_ratio", "pb_ratio", "roe_5yr_avg", "revenue_cagr_3yr",
+    "pat_cagr_3yr", "debt_equity", "fcf_trailing_cr", "market_cap_cr",
+]
+
+
+def _completeness_multiplier(fundamentals: dict) -> float:
+    """
+    Downrank stocks where most fundamental data is missing.
+    ≥75% present → 1.0 (no change)
+    50-75% present → 0.90 (−10%)
+    <50% present   → 0.75 (−25%)
+    """
+    available = sum(1 for k in _KEY_METRICS if fundamentals.get(k) is not None)
+    ratio = available / len(_KEY_METRICS)
+    if ratio >= 0.75:
+        return 1.0
+    if ratio >= 0.50:
+        return 0.90
+    return 0.75
+
+
 @dataclass
 class StockScore:
     symbol: str
@@ -44,11 +108,12 @@ def score_all(
         technicals   = data.get("technicals", {})
         ai           = (ai_signals or {}).get(symbol, {})
 
-        sector  = (
+        raw_sector = (
             data.get("universe", {}).get("sector", "")
             or fundamentals.get("sector_yf", "")
             or ""
         )
+        sector  = _normalise_sector(raw_sector)
         weights = _resolve_weights(weights_cfg, sector)
 
         try:
@@ -58,13 +123,14 @@ def score_all(
             v = valuation_score.compute(fundamentals, technicals)
             r = risk_score.compute(fundamentals, ai)
 
+            completeness = _completeness_multiplier(fundamentals)
             composite = (
                 weights["growth_score"]    * g.value
                 + weights["quality_score"]    * q.value
                 + weights["valuation_score"]  * v.value
                 + weights["momentum_score"]   * m.value
                 + weights["risk_score"]       * r.value   # negative weight
-            )
+            ) * completeness
             composite = max(0.0, min(100.0, composite))
 
             scored.append(StockScore(

@@ -85,10 +85,11 @@ class TestRiskScore:
         result = risk_score.compute(_f(debt_equity=5.0, interest_coverage=0.8, beta=1.8))
         assert result.value > 60, "High debt + low coverage should be high risk"
 
-    def test_material_audit_raises_risk(self):
-        no_issue = risk_score.compute(_f(), ai_signals={"auditor_qualification": "none"})
-        material = risk_score.compute(_f(), ai_signals={"auditor_qualification": "material"})
-        assert material.value > no_issue.value
+    def test_ai_signals_ignored(self):
+        """ai_signals param is kept for API compatibility but no longer affects risk score."""
+        base    = risk_score.compute(_f())
+        with_ai = risk_score.compute(_f(), ai_signals={"auditor_qualification": "material"})
+        assert base.value == with_ai.value, "ai_signals should have no effect on risk score"
 
     def test_high_pledge_raises_risk(self):
         low = risk_score.compute(_f(promoter_pledge_pct=0))
