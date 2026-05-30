@@ -39,6 +39,7 @@ from stock_analysis.output.email_digest import send as send_email
 from stock_analysis.output.html_report import render as render_html
 from stock_analysis.scoring.composite import StockScore, score_all
 from stock_analysis.screening.engine import get_passing_symbols, run_screen, run_screens
+from stock_analysis.ai import qualitative_analyzer
 from stock_analysis.universe.fetcher import fetch_universe, load_cached_universe
 from stock_analysis.universe.filter import apply_filters
 from stock_analysis.utils.logging_config import setup_logging
@@ -227,9 +228,39 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
         logger.info("Mode=screen: stopping after scoring.")
         return
 
-    # ── Stage 5: Output ───────────────────────────────────────────────────────
+    # ── Stage 5: AI Qualitative Analysis ─────────────────────────────────────
+    qualitative_data: dict[str, dict] = {}
+    if "AI_ANALYSIS" not in completed:
+        if settings.ai.enabled:
+            logger.info("▶ Stage 5: AI_ANALYSIS (Gemini qualitative synthesis)")
+            try:
+                # Use the ranked order so top stocks are analysed first
+                ranked_symbols = [s.symbol for s in ranked]
+                qualitative_data = qualitative_analyzer.run(
+                    symbols         = ranked_symbols,
+                    stock_data      = stock_data,
+                    cache           = cache,
+                    top_n           = settings.ai.top_n_for_analysis,
+                    ttl_hours       = settings.ai.qualitative_ttl_hours,
+                    news_days       = settings.ai.news_days_lookback,
+                    api_key_env_var = settings.ai.gemini_api_key_env_var,
+                )
+                cache.set_json("run", f"qualitative_{run_date}", qualitative_data, ttl_hours=48)
+                logger.info(f"  ✓ Qualitative analysis: {len(qualitative_data)} stocks")
+            except Exception as e:
+                logger.warning(f"  AI analysis failed (non-fatal): {e}")
+        else:
+            logger.info("▶ Stage 5: AI_ANALYSIS skipped (ai.enabled=false)")
+
+        completed.add("AI_ANALYSIS")
+        _save_run_state(state_path, {"completed_stages": list(completed)})
+    else:
+        qualitative_data = cache.get_json("run", f"qualitative_{run_date}") or {}
+        logger.info(f"  ✓ Qualitative (cached): {len(qualitative_data)} stocks")
+
+    # ── Stage 6: Output ───────────────────────────────────────────────────────
     if "OUTPUT" not in completed:
-        logger.info("▶ Stage 5: OUTPUT")
+        logger.info("▶ Stage 6: OUTPUT")
 
         templates_dir = Path(__file__).resolve().parent.parent.parent.parent / "templates"
         if not templates_dir.exists():
@@ -257,6 +288,7 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
                 run_date=run_date,
                 top_n=settings.output.top_n_in_email,
                 screen_results=screen_results,
+                qualitative_data=qualitative_data,
             )
 
         completed.add("OUTPUT")

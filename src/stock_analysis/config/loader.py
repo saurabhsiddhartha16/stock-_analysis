@@ -38,15 +38,12 @@ class FetchingConfig(BaseModel):
 
 
 class AiConfig(BaseModel):
-    model: str = "claude-opus-4-5"
-    model_fast: str = "claude-haiku-4-5-20251001"
-    max_tokens_filing: int = 2048
-    max_tokens_news: int = 512
-    max_tokens_thesis: int = 1024
-    use_batch_api: bool = True
-    batch_poll_interval_seconds: int = 60
-    batch_max_wait_hours: int = 2
-    ai_analysis_top_n: int = 100
+    enabled: bool = True
+    gemini_model: str = "gemini-1.5-flash"
+    gemini_api_key_env_var: str = "GEMINI_API_KEY"
+    top_n_for_analysis: int = 20
+    news_days_lookback: int = 30
+    qualitative_ttl_hours: float = 48.0
 
 
 class OutputConfig(BaseModel):
@@ -69,9 +66,7 @@ class EmailConfig(BaseModel):
 
 
 class ApisConfig(BaseModel):
-    anthropic_key_env_var: str = "ANTHROPIC_API_KEY"
-    newsapi_key_env_var: str = "NEWS_API_KEY"
-    zerodha_api_key_env_var: str = "KITE_API_KEY"
+    gemini_key_env_var: str = "GEMINI_API_KEY"
 
 
 class Settings(BaseModel):
