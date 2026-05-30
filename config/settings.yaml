@@ -24,7 +24,7 @@ fetching:
 
 ai:
   enabled: true
-  gemini_model: "gemini-1.5-flash"         # Free tier: 15 RPM, 1M tokens/day
+  gemini_model: "gemini-2.5-flash"          # Free tier — fastest available model
   gemini_api_key_env_var: "GEMINI_API_KEY"
   top_n_for_analysis: 20                   # Analyse top N ranked stocks only
   news_days_lookback: 30                   # Fetch news from last N days

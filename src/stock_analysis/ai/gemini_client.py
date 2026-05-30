@@ -17,7 +17,7 @@ except ImportError:
 
 _client = None
 _RATE_LIMIT_DELAY = 4.5   # 15 RPM free tier → 1 req / 4s; 4.5 adds buffer
-_MODEL_NAME       = "gemini-1.5-flash"
+_MODEL_NAME       = "gemini-2.5-flash"
 
 
 # ── Client initialisation ─────────────────────────────────────────────────────
