@@ -26,19 +26,22 @@ risk_sub_weights:
 
 # Quality sub-weights
 quality_sub_weights:
-  roe_consistency: 0.25
-  roce_vs_wacc_spread: 0.25
-  fcf_conversion_ratio: 0.25
-  working_capital_trend: 0.15
+  roe_consistency: 0.20       # ROE level + consistency penalty (CV of annual series)
+  roce_vs_wacc_spread: 0.20
+  cfo_pat_conversion: 0.20    # Earnings quality: CFO / PAT
+  fcf_conversion_ratio: 0.20
+  working_capital_trend: 0.10 # Placeholder — Phase 3
   cash_to_market_cap: 0.10
 
 # Momentum sub-weights
 momentum_sub_weights:
-  price_vs_sma50_pct: 0.20
-  price_vs_sma200_pct: 0.20
-  rsi_positioning: 0.15
-  macd_signal_alignment: 0.15
-  relative_strength_vs_nifty50_3m: 0.30
+  price_vs_sma200_pct: 0.15
+  price_vs_sma50_pct: 0.10
+  rsi_positioning: 0.10
+  macd_signal_alignment: 0.10
+  return_1m: 0.15             # Actual 1-month price return
+  return_3m: 0.20             # Actual 3-month price return
+  relative_strength_vs_nifty50: 0.20  # Stock 3m return − Nifty 3m return
 
 # Valuation sub-weights (higher score = cheaper = better)
 valuation_sub_weights:
@@ -47,19 +50,10 @@ valuation_sub_weights:
   pb_ratio: 0.15
 
 # Sector-specific weight overrides
+# Keys must match the normalised sector strings produced by composite._normalise_sector()
+# which maps raw nifty500.csv/yfinance industry strings to these canonical names.
 sector_overrides:
-  BFSI:
-    growth_score: 0.35
-    quality_score: 0.30
-    valuation_score: 0.15
-    momentum_score: 0.10
-    risk_score: -0.10
-    risk_sub_weights:
-      debt_equity_normalized: 0.10
-      interest_coverage_inverted: 0.05
-      beta_normalized: 0.30
-      promoter_pledge_pct: 0.55
-
+  # Financial Services — covers "Financial Services" (nifty500), "BFSI", "Banks" etc.
   Financial Services:
     growth_score: 0.35
     quality_score: 0.30
@@ -67,20 +61,22 @@ sector_overrides:
     momentum_score: 0.10
     risk_score: -0.10
     risk_sub_weights:
-      debt_equity_normalized: 0.10
+      debt_equity_normalized: 0.10      # High leverage is structural for banks
       interest_coverage_inverted: 0.05
       beta_normalized: 0.30
       promoter_pledge_pct: 0.55
 
-  IT:
+  # Information Technology — covers "Information Technology" (nifty500), "IT" etc.
+  Information Technology:
     valuation_score: 0.20
     momentum_score: 0.20
     quality_sub_weights:
-      cash_to_market_cap: 0.20
-      roe_consistency: 0.25
+      roe_consistency: 0.20
       roce_vs_wacc_spread: 0.25
+      cfo_pat_conversion: 0.20
       fcf_conversion_ratio: 0.20
-      working_capital_trend: 0.10
+      working_capital_trend: 0.05
+      cash_to_market_cap: 0.10          # IT companies hold large cash balances
 
   Fast Moving Consumer Goods:
     growth_score: 0.25
@@ -96,10 +92,11 @@ sector_overrides:
     momentum_score: 0.15
     risk_score: -0.05
     quality_sub_weights:
-      roe_consistency: 0.25
+      roe_consistency: 0.20
       roce_vs_wacc_spread: 0.25
-      fcf_conversion_ratio: 0.20
-      working_capital_trend: 0.20
+      cfo_pat_conversion: 0.20
+      fcf_conversion_ratio: 0.15
+      working_capital_trend: 0.10
       cash_to_market_cap: 0.10
 
   Metals & Mining:
@@ -109,10 +106,12 @@ sector_overrides:
     momentum_score: 0.20
     risk_score: -0.10
 
+  # Infrastructure — covers "Construction" (nifty500), "Infrastructure", "Engineering"
   Infrastructure:
     quality_sub_weights:
-      fcf_conversion_ratio: 0.15
-      working_capital_trend: 0.25
-      roe_consistency: 0.25
+      roe_consistency: 0.20
       roce_vs_wacc_spread: 0.25
+      cfo_pat_conversion: 0.15
+      fcf_conversion_ratio: 0.15
+      working_capital_trend: 0.15      # Working capital matters more for project businesses
       cash_to_market_cap: 0.10

@@ -268,6 +268,7 @@ def _parse_ratio_table(soup: BeautifulSoup) -> dict:
         if "roe" in label:
             result["roe_ttm"] = values[0]
             result["roe_5yr_avg"] = round(sum(values[:5]) / len(values[:5]), 2) if len(values) >= 5 else values[0]
+            result["roe_annual_series"] = values  # full series for consistency scoring
         elif "roce" in label:
             result["roce"] = values[0]
             result["roce_5yr_avg"] = round(sum(values[:5]) / len(values[:5]), 2) if len(values) >= 5 else values[0]
@@ -387,14 +388,15 @@ def _parse_cash_flow(soup: BeautifulSoup) -> dict:
         elif "investing" in label or "capex" in label:
             capex_values = list(reversed(values))
 
+    if cfo_values:
+        result["cfo_trailing_cr"] = cfo_values[0]  # store CFO for earnings quality check
+
     if cfo_values and capex_values and len(cfo_values) == len(capex_values):
         # FCF = CFO + investing (investing is typically negative for capex)
         fcf_series = [c + i for c, i in zip(cfo_values, capex_values)]
         result["fcf_trailing_cr"] = fcf_series[0] if fcf_series else None
-        if pat_ttm := None:  # will be enriched from P&L parse
-            pass
     elif cfo_values:
-        result["fcf_trailing_cr"] = cfo_values[0]  # rough proxy
+        result["fcf_trailing_cr"] = cfo_values[0]  # rough proxy when no capex data
 
     return result
 
@@ -452,4 +454,6 @@ def _empty_fundamentals() -> dict:
         "pat_annual_series": None,
         "roce_5yr_avg": None,
         "roce_10yr_avg": None,
+        "cfo_trailing_cr": None,
+        "roe_annual_series": None,
     }

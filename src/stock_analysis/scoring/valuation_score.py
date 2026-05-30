@@ -47,10 +47,11 @@ def compute(fundamentals: dict, technicals: dict | None = None) -> Score:
     # ── P / FCF ───────────────────────────────────────────────────────────────
     mkt_cap = fundamentals.get("market_cap_cr")
     fcf     = fundamentals.get("fcf_trailing_cr")
-    if mkt_cap and fcf and fcf > 0 and mkt_cap > 0:
+    # Require FCF >= 50 Cr to avoid nonsensical ratios when FCF is near zero
+    if mkt_cap and fcf and fcf >= 50 and mkt_cap > 0:
         p_fcf = mkt_cap / fcf
         sub["p_fcf_score"] = _inv_sigmoid(p_fcf, k=0.07, midpoint=28.0)
-    elif fcf and fcf < 0:
+    elif fcf is not None and fcf < 0:
         sub["p_fcf_score"] = 5.0   # negative FCF → poor
 
     # ── P / B ─────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ def _explain(f: dict, sub: dict) -> str:
     pb     = f.get("pb_ratio")
     if pe and growth and growth > 1:
         parts.append(f"PEG: {pe/growth:.1f}")
-    if mkt and fcf and fcf > 0:
+    if mkt and fcf and fcf >= 50:
         parts.append(f"P/FCF: {mkt/fcf:.1f}x")
     if pb:
         parts.append(f"P/B: {pb:.1f}x")
