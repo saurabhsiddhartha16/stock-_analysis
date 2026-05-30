@@ -40,6 +40,8 @@ from stock_analysis.output.html_report import render as render_html
 from stock_analysis.scoring.composite import StockScore, score_all
 from stock_analysis.screening.engine import get_passing_symbols, run_screen, run_screens
 from stock_analysis.ai import qualitative_analyzer
+from stock_analysis.data.market_overview import fetch_fii_dii, fetch_index_data
+from stock_analysis.screening.sections import run_sections
 from stock_analysis.universe.fetcher import fetch_universe, load_cached_universe
 from stock_analysis.universe.filter import apply_filters
 from stock_analysis.utils.logging_config import setup_logging
@@ -262,6 +264,32 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
     if "OUTPUT" not in completed:
         logger.info("▶ Stage 6: OUTPUT")
 
+        # Market overview (index prices + FII/DII) — non-blocking
+        logger.info("  Fetching market overview...")
+        market_indices = []
+        fii_dii_data   = None
+        try:
+            market_indices = fetch_index_data()
+            logger.info(f"  Index data: {sum(1 for x in market_indices if x['price'])} indices fetched")
+        except Exception as e:
+            logger.warning(f"  Index data fetch failed (non-fatal): {e}")
+        try:
+            fii_dii_data = fetch_fii_dii()
+            if fii_dii_data:
+                logger.info(f"  FII/DII: FII net {fii_dii_data['fii_net']:+.0f} Cr, DII net {fii_dii_data['dii_net']:+.0f} Cr")
+        except Exception as e:
+            logger.warning(f"  FII/DII fetch failed (non-fatal): {e}")
+
+        # Run 5 email sections with no-repeat weekly filter
+        logger.info("  Running 5 email sections...")
+        email_sections = run_sections(
+            symbols   = symbols,
+            stock_data= stock_data,
+            scores    = ranked,
+            cache_dir = Path(settings.data.cache_dir),
+            run_date  = run_date,
+        )
+
         templates_dir = Path(__file__).resolve().parent.parent.parent.parent / "templates"
         if not templates_dir.exists():
             templates_dir = Path("templates")
@@ -289,6 +317,9 @@ def run(run_date: str, mode: str = "full", resume: bool = True) -> None:
                 top_n=settings.output.top_n_in_email,
                 screen_results=screen_results,
                 qualitative_data=qualitative_data,
+                market_indices=market_indices,
+                fii_dii_data=fii_dii_data,
+                email_sections=email_sections,
             )
 
         completed.add("OUTPUT")
