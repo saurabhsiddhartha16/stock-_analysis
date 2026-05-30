@@ -1,9 +1,9 @@
-name: Daily Stock Analysis
+name: Stock Analysis (Sun/Tue/Thu)
 
 on:
   schedule:
-    # 2:30 AM UTC = 8:00 AM IST (UTC+5:30) — runs every day
-    - cron: "30 2 * * *"
+    # 2:30 AM UTC = 8:00 AM IST (UTC+5:30) — runs Sunday, Tuesday, Thursday
+    - cron: "30 2 * * 0,2,4"
   workflow_dispatch:
     # Allows manual trigger from GitHub Actions tab
     inputs:
