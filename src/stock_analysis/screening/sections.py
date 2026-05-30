@@ -32,18 +32,19 @@ def _roce(f: dict) -> float | None:
 # ── Filter functions (defined BEFORE SECTIONS list) ───────────────────────────
 
 def _filter_large_cap_underrated(sym: str, f: dict, t: dict) -> bool:
-    """Market cap >= 10,000 Cr | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | below EMA200."""
+    """Market cap >= 10,000 Cr | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | below EMA50."""
     return (
         (f.get("market_cap_cr") or 0) >= 10_000
         and (_roce(f) or 0) >= 10
         and (f.get("revenue_cagr_5yr") or 0) >= 10
-        and (t.get("price_vs_ema200_pct") is not None)
-        and t["price_vs_ema200_pct"] < 0
+        and (t.get("price_vs_ema50_pct") is not None)
+        and t["price_vs_ema50_pct"] < 0
     )
 
 
 def _filter_finance_underrated(sym: str, f: dict, t: dict) -> bool:
-    """Financial sector (any NSE financial index) | same size/quality/below-EMA200 criteria."""
+    """Financial sector (any NSE financial index) | ROCE >= 10% | Rev CAGR 5yr >= 10% | below EMA200.
+    No market cap floor — covers small/mid financial stocks too."""
     is_financial = (
         sym in FINANCIAL_STOCKS
         or (f.get("sector_yf") or "").lower() in ("financial services", "financialservices")
@@ -51,7 +52,6 @@ def _filter_finance_underrated(sym: str, f: dict, t: dict) -> bool:
     )
     return (
         is_financial
-        and (f.get("market_cap_cr") or 0) >= 10_000
         and (_roce(f) or 0) >= 10
         and (f.get("revenue_cagr_5yr") or 0) >= 10
         and (t.get("price_vs_ema200_pct") is not None)
@@ -60,10 +60,10 @@ def _filter_finance_underrated(sym: str, f: dict, t: dict) -> bool:
 
 
 def _filter_midcap_underrated(sym: str, f: dict, t: dict) -> bool:
-    """Market cap 5,000-10,000 Cr | ROCE 5yr >= 15% | Rev CAGR 5yr >= 15% | below EMA50."""
+    """Market cap 1,000-10,000 Cr | ROCE 5yr >= 15% | Rev CAGR 5yr >= 15% | below EMA50."""
     mkt = f.get("market_cap_cr") or 0
     return (
-        5_000 <= mkt < 10_000
+        1_000 <= mkt < 10_000
         and (_roce(f) or 0) >= 15
         and (f.get("revenue_cagr_5yr") or 0) >= 15
         and (t.get("price_vs_ema50_pct") is not None)
@@ -72,9 +72,8 @@ def _filter_midcap_underrated(sym: str, f: dict, t: dict) -> bool:
 
 
 def _filter_tech_high_growth(sym: str, f: dict, t: dict) -> bool:
-    """Nifty India Digital constituent | 1yr revenue growth >= 15%."""
-    rev_1yr = f.get("revenue_yoy") or f.get("revenue_cagr_3yr") or 0
-    return sym in NIFTY_DIGITAL_SYMBOLS and rev_1yr >= 15
+    """Nifty India Digital constituent — no revenue threshold."""
+    return sym in NIFTY_DIGITAL_SYMBOLS
 
 
 def _filter_momentum(sym: str, f: dict, t: dict) -> bool:
@@ -90,11 +89,11 @@ SECTIONS: list[dict] = [
     {
         "id":           "large_cap_underrated",
         "name":         "Large Cap | Underrated",
-        "description":  "Large-cap stocks below 200-day EMA — quality at a discount",
+        "description":  "Large-cap stocks below 50-day EMA — quality at a short-term discount",
         "color_header": "#2c5282",
         "color_border": "#63b3ed",
         "filter":       _filter_large_cap_underrated,
-        "criteria_note": "Mkt Cap >= 10,000 Cr | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | Price < EMA200",
+        "criteria_note": "Mkt Cap >= 10,000 Cr | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | Price < EMA50",
     },
     {
         "id":           "finance_underrated",
@@ -103,25 +102,25 @@ SECTIONS: list[dict] = [
         "color_header": "#276749",
         "color_border": "#68d391",
         "filter":       _filter_finance_underrated,
-        "criteria_note": "Financial sector | Mkt Cap >= 10,000 Cr | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | Price < EMA200",
+        "criteria_note": "Financial sector (any size) | ROCE 5yr >= 10% | Rev CAGR 5yr >= 10% | Price < EMA200",
     },
     {
         "id":           "midcap_underrated",
         "name":         "Mid Cap | Underrated",
-        "description":  "Mid-cap stocks below 50-day EMA — high-quality mid caps at a discount",
+        "description":  "Small & mid-cap stocks below 50-day EMA — high quality at a discount",
         "color_header": "#744210",
         "color_border": "#f6ad55",
         "filter":       _filter_midcap_underrated,
-        "criteria_note": "Mkt Cap 5,000-10,000 Cr | ROCE 5yr >= 15% | Rev CAGR 5yr >= 15% | Price < EMA50",
+        "criteria_note": "Mkt Cap 1,000-10,000 Cr | ROCE 5yr >= 15% | Rev CAGR 5yr >= 15% | Price < EMA50",
     },
     {
         "id":           "tech_high_growth",
         "name":         "Tech Stocks | High Growth",
-        "description":  "Nifty India Digital constituents with strong revenue growth",
+        "description":  "Nifty India Digital constituents — ranked by composite score",
         "color_header": "#553c9a",
         "color_border": "#b794f4",
         "filter":       _filter_tech_high_growth,
-        "criteria_note": "Nifty India Digital Index | 1yr Revenue Growth >= 15%",
+        "criteria_note": "Nifty India Digital Index constituents",
     },
     {
         "id":           "momentum",
