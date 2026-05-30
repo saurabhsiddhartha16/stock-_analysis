@@ -102,6 +102,9 @@ def _fetch_yfinance(symbol: str) -> dict:
         pat_series = _extract_series(fins, "Net Income")
         eps_series = _extract_eps(t)
 
+        # Quarterly income statement for QoQ/YoY margins
+        q_data = _fetch_quarterly(t)
+
         return {
             "market_cap_cr": market_cap_cr,
             "pe_ratio": _safe(info.get("trailingPE")),
@@ -117,10 +120,96 @@ def _fetch_yfinance(symbol: str) -> dict:
             "sector_yf": info.get("sector", ""),
             "industry_yf": info.get("industry", ""),
             "company_name": info.get("longName", symbol),
+            **q_data,
         }
     except Exception as e:
         logger.debug(f"yfinance fetch failed for {symbol}: {e}")
         return {}
+
+
+def _fetch_quarterly(t: yf.Ticker) -> dict:
+    """
+    Fetch quarterly income statement for QoQ/YoY revenue and margin comparison.
+    Returns flat dict with keys: rev_q1_cr, rev_q2_cr, rev_qoq_pct, rev_yoy_pct,
+                                  opm_q1, opm_q2, opm_qoq_pts,
+                                  npm_q1, npm_q2, npm_qoq_pts,
+                                  q1_label, q2_label
+    Source: Yahoo Finance quarterly_financials
+    """
+    try:
+        qf = t.quarterly_financials
+        if qf is None or qf.empty or qf.shape[1] < 2:
+            return {}
+
+        # Columns are quarters newest → oldest
+        cols = qf.columns.tolist()
+        q1_col, q2_col = cols[0], cols[1]
+
+        def _row(name: str) -> list[float]:
+            matches = [r for r in qf.index if name.lower() in str(r).lower()]
+            if not matches:
+                return []
+            row = qf.loc[matches[0]]
+            return [_safe(row.get(c)) for c in cols]
+
+        rev_row = _row("Total Revenue")
+        oi_row  = _row("Operating Income")  # Operating Profit
+        ni_row  = _row("Net Income")
+
+        result: dict = {}
+
+        # Quarter labels (e.g. "Q3 FY26")
+        try:
+            result["q1_label"] = _quarter_label(q1_col)
+            result["q2_label"] = _quarter_label(q2_col)
+        except Exception:
+            pass
+
+        # Revenue QoQ and YoY
+        if len(rev_row) >= 2 and rev_row[0] and rev_row[1]:
+            r1, r2 = rev_row[0], rev_row[1]
+            result["rev_q1_cr"]   = _to_crore(r1)
+            result["rev_q2_cr"]   = _to_crore(r2)
+            result["rev_qoq_pct"] = round((r1 / r2 - 1) * 100, 1) if r2 else None
+        # YoY: compare q1 with q5 (same quarter last year = 4 quarters back)
+        if len(rev_row) >= 5 and rev_row[0] and rev_row[4]:
+            result["rev_yoy_pct"] = round((rev_row[0] / rev_row[4] - 1) * 100, 1)
+
+        # Operating Profit Margin (OPM)
+        if oi_row and rev_row and oi_row[0] is not None and rev_row[0]:
+            opm1 = round(oi_row[0] / rev_row[0] * 100, 1)
+            result["opm_q1"] = opm1
+            if len(oi_row) >= 2 and oi_row[1] is not None and rev_row[1]:
+                opm2 = round(oi_row[1] / rev_row[1] * 100, 1)
+                result["opm_q2"]      = opm2
+                result["opm_qoq_pts"] = round(opm1 - opm2, 1)
+
+        # Net Profit Margin (NPM)
+        if ni_row and rev_row and ni_row[0] is not None and rev_row[0]:
+            npm1 = round(ni_row[0] / rev_row[0] * 100, 1)
+            result["npm_q1"] = npm1
+            if len(ni_row) >= 2 and ni_row[1] is not None and rev_row[1]:
+                npm2 = round(ni_row[1] / rev_row[1] * 100, 1)
+                result["npm_q2"]      = npm2
+                result["npm_qoq_pts"] = round(npm1 - npm2, 1)
+            # NPM TTM (trailing)
+            result["npm_ttm"] = round(ni_row[0] / rev_row[0] * 100, 1)
+
+        return result
+    except Exception as e:
+        logger.debug(f"Quarterly fetch failed: {e}")
+        return {}
+
+
+def _quarter_label(ts) -> str:
+    """Convert a pandas Timestamp column to 'Q3 FY26' style label."""
+    import pandas as pd
+    if isinstance(ts, pd.Timestamp):
+        m, y = ts.month, ts.year
+        fy = y + 1 if m >= 4 else y   # Indian FY: April–March
+        q  = ((m - 4) % 12) // 3 + 1
+        return f"Q{q} FY{str(fy)[-2:]}"
+    return str(ts)[:10]
 
 
 def _extract_series(fins: pd.DataFrame | None, row_name: str) -> list[float]:
@@ -313,16 +402,29 @@ def _parse_pl_table(soup: BeautifulSoup) -> dict:
     # Screener shows oldest→latest, so reverse
     if rev_values:
         rev_rev = list(reversed(rev_values))
-        result["revenue_cagr_3yr"] = _cagr(rev_rev, 3)
-        result["revenue_cagr_5yr"] = _cagr(rev_rev, 5)
-        result["revenue_ttm_cr"] = rev_rev[0] if rev_rev else None
+        result["revenue_cagr_3yr"]  = _cagr(rev_rev, 3)
+        result["revenue_cagr_5yr"]  = _cagr(rev_rev, 5)
+        result["revenue_cagr_10yr"] = _cagr(rev_rev, 10)
+        if len(rev_rev) >= 2 and rev_rev[1] and rev_rev[1] != 0:
+            result["revenue_yoy"] = round((rev_rev[0] / rev_rev[1] - 1) * 100, 2)
+        result["revenue_ttm_cr"]        = rev_rev[0] if rev_rev else None
         result["revenue_annual_series"] = rev_rev
     if pat_values:
         pat_rev = list(reversed(pat_values))
-        result["pat_cagr_3yr"] = _cagr(pat_rev, 3)
-        result["pat_cagr_5yr"] = _cagr(pat_rev, 5)
-        result["pat_ttm_cr"] = pat_rev[0] if pat_rev else None
+        result["pat_cagr_3yr"]  = _cagr(pat_rev, 3)
+        result["pat_cagr_5yr"]  = _cagr(pat_rev, 5)
+        result["pat_cagr_10yr"] = _cagr(pat_rev, 10)
+        if len(pat_rev) >= 2 and pat_rev[1] and pat_rev[1] != 0:
+            result["pat_yoy"] = round((pat_rev[0] / pat_rev[1] - 1) * 100, 2)
+        result["pat_ttm_cr"]       = pat_rev[0] if pat_rev else None
         result["pat_annual_series"] = pat_rev
+
+    # Annual net profit margin (PAT / Revenue)
+    if rev_values and pat_values:
+        rr = list(reversed(rev_values))
+        pr = list(reversed(pat_values))
+        if rr[0] and rr[0] > 0:
+            result["npm_ttm"] = round(pr[0] / rr[0] * 100, 2)
 
     return result
 
@@ -456,4 +558,23 @@ def _empty_fundamentals() -> dict:
         "roce_10yr_avg": None,
         "cfo_trailing_cr": None,
         "roe_annual_series": None,
+        # Extended growth fields
+        "revenue_cagr_10yr": None,
+        "revenue_yoy": None,
+        "pat_cagr_10yr": None,
+        "pat_yoy": None,
+        "npm_ttm": None,
+        # Quarterly financial comparison (from yfinance quarterly_financials)
+        "q1_label": None,
+        "q2_label": None,
+        "rev_q1_cr": None,
+        "rev_q2_cr": None,
+        "rev_qoq_pct": None,
+        "rev_yoy_pct": None,
+        "opm_q1": None,
+        "opm_q2": None,
+        "opm_qoq_pts": None,
+        "npm_q1": None,
+        "npm_q2": None,
+        "npm_qoq_pts": None,
     }

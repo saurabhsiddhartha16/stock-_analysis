@@ -1,9 +1,11 @@
-name: Stock Analysis (Sun/Tue/Thu)
+name: Stock Analysis (Sun/Thu)
 
 on:
   schedule:
-    # 2:30 AM UTC = 8:00 AM IST (UTC+5:30) — runs Sunday, Tuesday, Thursday
-    - cron: "30 2 * * 0,2,4"
+    # 2:30 AM UTC = 8:00 AM IST (UTC+5:30) — runs Sunday and Thursday
+    # Sunday  : covers Friday's market data (last trading day of the week)
+    # Thursday: covers Wednesday's market data (mid-week view)
+    - cron: "30 2 * * 0,4"
   workflow_dispatch:
     # Allows manual trigger from GitHub Actions tab
     inputs:

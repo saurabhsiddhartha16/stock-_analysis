@@ -1,4 +1,18 @@
-"""Sends the daily email digest with HTML inline and CSV attachment."""
+"""
+NSE Stock Analysis Email Digest — comprehensive sectioned report.
+
+Structure:
+  1. Header
+  2. Market Overview  — index prices + FII/DII buy/sell
+  3. Five sections    — top 3 stocks each, with deep-dive per stock
+  4. Footer + sources
+
+Sources cited inline:
+  Index data  : Yahoo Finance (yfinance)
+  FII/DII     : NSE India (nseindia.com)
+  Fundamentals: Screener.in + Yahoo Finance
+  AI insights : Google News RSS + Gemini 2.5 Flash
+"""
 from __future__ import annotations
 
 import os
@@ -14,6 +28,8 @@ from stock_analysis.config.loader import EmailConfig
 from stock_analysis.scoring.composite import StockScore
 
 
+# ── Public API ────────────────────────────────────────────────────────────────
+
 def send(
     scores: list[StockScore],
     stock_data: dict[str, dict],
@@ -23,49 +39,49 @@ def send(
     top_n: int = 15,
     screen_results: list[dict] | None = None,
     qualitative_data: dict[str, dict] | None = None,
+    market_indices: list[dict] | None = None,
+    fii_dii_data: dict | None = None,
+    email_sections: list[dict] | None = None,
 ) -> bool:
-    """
-    Send the daily digest email.
-    Returns True on success, False on failure (non-raising so the pipeline continues).
-    """
     smtp_user = os.environ.get(email_cfg.smtp_user_env_var, "")
     smtp_pass = os.environ.get(email_cfg.smtp_pass_env_var, "")
-
     if not smtp_user or not smtp_pass:
         logger.warning(
-            "Email credentials not set — skipping email. "
+            f"Email credentials not set — skipping. "
             f"Set {email_cfg.smtp_user_env_var} and {email_cfg.smtp_pass_env_var} in .env"
         )
         return False
 
-    top_stocks_str = ", ".join(s.symbol for s in scores[:3])
-    subject = email_cfg.subject_template.format(
-        date=run_date, top_stocks=top_stocks_str
-    )
+    top3 = ", ".join(s.symbol for s in scores[:3])
+    subject = email_cfg.subject_template.format(date=run_date, top_stocks=top3)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"]    = email_cfg.from_address
     msg["To"]      = ", ".join(email_cfg.to_addresses)
 
-    html_body = _build_email_html(
-        scores[:top_n], stock_data, run_date,
-        screen_results, qualitative_data or {}
+    html = _build_html(
+        run_date        = run_date,
+        market_indices  = market_indices or [],
+        fii_dii_data    = fii_dii_data,
+        email_sections  = email_sections or [],
+        stock_data      = stock_data,
+        qual            = qualitative_data or {},
     )
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(MIMEText(html, "html", "utf-8"))
 
     if csv_path and csv_path.exists():
         with csv_path.open("rb") as f:
-            attachment = MIMEApplication(f.read(), Name=csv_path.name)
-        attachment["Content-Disposition"] = f'attachment; filename="{csv_path.name}"'
-        msg.attach(attachment)
+            att = MIMEApplication(f.read(), Name=csv_path.name)
+        att["Content-Disposition"] = f'attachment; filename="{csv_path.name}"'
+        msg.attach(att)
 
     try:
-        with smtplib.SMTP(email_cfg.smtp_host, email_cfg.smtp_port) as server:
+        with smtplib.SMTP(email_cfg.smtp_host, email_cfg.smtp_port) as srv:
             if email_cfg.smtp_use_tls:
-                server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(email_cfg.from_address, email_cfg.to_addresses, msg.as_string())
+                srv.starttls()
+            srv.login(smtp_user, smtp_pass)
+            srv.sendmail(email_cfg.from_address, email_cfg.to_addresses, msg.as_string())
         logger.info(f"Email sent to {email_cfg.to_addresses}")
         return True
     except Exception as e:
@@ -73,225 +89,487 @@ def send(
         return False
 
 
-# ── HTML builder ──────────────────────────────────────────────────────────────
+# ── Master HTML builder ───────────────────────────────────────────────────────
 
-def _build_email_html(
-    scores: list[StockScore],
-    stock_data: dict[str, dict],
+def _build_html(
     run_date: str,
-    screen_results: list[dict] | None = None,
-    qualitative_data: dict[str, dict] | None = None,
+    market_indices: list[dict],
+    fii_dii_data: dict | None,
+    email_sections: list[dict],
+    stock_data: dict,
+    qual: dict,
 ) -> str:
-    qual = qualitative_data or {}
-
-    ranking_rows   = _build_ranking_table(scores, stock_data)
-    qualitative_html = _build_qualitative_section(scores, stock_data, qual)
-    screen_html    = _build_screen_sections(screen_results or [])
-
+    sections_html = "".join(
+        _section_block(sec, stock_data, qual)
+        for sec in email_sections
+    )
     return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-<div style="max-width:900px;margin:24px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
-
-  <!-- Header -->
-  <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:24px 28px;color:white">
-    <h1 style="font-size:20px;font-weight:700;margin:0">NSE Stock Analysis</h1>
-    <p style="color:#a0aec0;font-size:13px;margin:6px 0 0">
-      {run_date} &nbsp;·&nbsp; Top {len(scores)} picks from quantitative screen
-    </p>
-  </div>
-
-  <!-- Ranking Table -->
-  <div style="padding:24px 28px 8px">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4a5568;margin-bottom:12px">
-      Quantitative Rankings
-    </div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="background:#f7faff">
-          <th style="padding:8px 10px;text-align:left;color:#718096;font-size:10px;text-transform:uppercase">#</th>
-          <th style="padding:8px 10px;text-align:left;color:#718096;font-size:10px;text-transform:uppercase">Stock</th>
-          <th style="padding:8px 10px;text-align:left;color:#718096;font-size:10px;text-transform:uppercase">Sector</th>
-          <th style="padding:8px 10px;text-align:right;color:#718096;font-size:10px;text-transform:uppercase">Score</th>
-          <th style="padding:8px 10px;text-align:right;color:#48bb78;font-size:10px;text-transform:uppercase">Growth</th>
-          <th style="padding:8px 10px;text-align:right;color:#9f7aea;font-size:10px;text-transform:uppercase">Quality</th>
-          <th style="padding:8px 10px;text-align:right;color:#667eea;font-size:10px;text-transform:uppercase">Value</th>
-          <th style="padding:8px 10px;text-align:right;color:#ed8936;font-size:10px;text-transform:uppercase">Momentum</th>
-          <th style="padding:8px 10px;text-align:right;color:#fc8181;font-size:10px;text-transform:uppercase">Risk</th>
-          <th style="padding:8px 10px;text-align:right;color:#718096;font-size:10px;text-transform:uppercase">P/E</th>
-          <th style="padding:8px 10px;text-align:right;color:#718096;font-size:10px;text-transform:uppercase">ROE</th>
-        </tr>
-      </thead>
-      <tbody>{ranking_rows}</tbody>
-    </table>
-  </div>
-
-  <!-- Qualitative Insights -->
-  {qualitative_html}
-
-  <!-- Named Screens -->
-  {screen_html}
-
-  <!-- Footer -->
-  <div style="background:#f7faff;padding:14px 28px;font-size:11px;color:#718096;text-align:center">
-    Full details in the attached CSV &nbsp;·&nbsp; NSE Stock Analysis Agent &nbsp;·&nbsp;
-    <strong>Not investment advice.</strong>
-  </div>
-
+<html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#edf2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<div style="max-width:800px;margin:16px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10)">
+  {_header(run_date)}
+  {_market_overview(market_indices, fii_dii_data)}
+  {sections_html}
+  {_footer()}
 </div>
 </body></html>"""
 
 
-def _build_ranking_table(scores: list[StockScore], stock_data: dict) -> str:
-    rows = ""
-    for i, s in enumerate(scores, 1):
-        f      = stock_data.get(s.symbol, {}).get("fundamentals", {})
-        u      = stock_data.get(s.symbol, {}).get("universe", {})
-        name   = f.get("company_name") or s.symbol
-        sector = u.get("sector") or f.get("sector_yf") or ""
-        pe     = f"{f['pe_ratio']:.1f}"    if f.get("pe_ratio")    else "—"
-        roe    = f"{f['roe_5yr_avg']:.1f}%" if f.get("roe_5yr_avg") else "—"
+# ── 1. Header ─────────────────────────────────────────────────────────────────
 
-        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-        score_color = (
-            "#276749" if s.composite >= 55 else
-            "#744210" if s.composite >= 40 else "#742a2a"
-        )
-        rows += f"""
-        <tr style="border-bottom:1px solid #f0f2f5">
-          <td style="padding:8px 10px;font-weight:700;font-size:12px">{medal}</td>
-          <td style="padding:8px 10px">
-            <div style="font-weight:700;font-size:12px">{s.symbol}</div>
-            <div style="font-size:10px;color:#718096">{name}</div>
-          </td>
-          <td style="padding:8px 10px;font-size:10px;color:#2b6cb0">{sector}</td>
-          <td style="padding:8px 10px;font-weight:800;font-size:15px;color:{score_color};text-align:right">{s.composite:.1f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{s.growth:.0f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{s.quality:.0f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{s.valuation:.0f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{s.momentum:.0f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px;color:#c53030">{s.risk:.0f}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{pe}</td>
-          <td style="padding:8px 10px;text-align:right;font-size:11px">{roe}</td>
-        </tr>"""
-    return rows
-
-
-def _build_qualitative_section(
-    scores: list[StockScore],
-    stock_data: dict,
-    qual: dict[str, dict],
-) -> str:
-    if not qual:
-        return ""
-
-    cards = ""
-    for i, s in enumerate(scores, 1):
-        q = qual.get(s.symbol)
-        if not q:
-            continue
-
-        f    = stock_data.get(s.symbol, {}).get("fundamentals", {})
-        name = f.get("company_name") or s.symbol
-
-        sentiment = q.get("overall_sentiment", "Neutral")
-        tone      = q.get("management_tone", "Unknown")
-        tone_rsn  = q.get("tone_reason", "")
-        triggers  = q.get("recent_triggers", "")
-        positives = q.get("key_positives", [])
-        risks     = q.get("key_risks", [])
-
-        # Colour scheme by sentiment
-        sentiment_color, badge_bg, border_color = {
-            "Positive": ("#276749", "#276749", "#68d391"),
-            "Negative": ("#742a2a", "#742a2a", "#fc8181"),
-        }.get(sentiment, ("#2d3748", "#718096", "#cbd5e0"))
-
-        tone_badge_bg = {
-            "Bullish":  "#276749",
-            "Cautious": "#744210",
-            "Mixed":    "#2b6cb0",
-        }.get(tone, "#718096")
-
-        pos_items = "".join(
-            f'<div style="font-size:11px;color:#2d3748;padding:2px 0">&#10003; {p}</div>'
-            for p in positives[:3]
-        ) or '<div style="font-size:11px;color:#a0aec0">No positives identified</div>'
-
-        risk_items = "".join(
-            f'<div style="font-size:11px;color:#2d3748;padding:2px 0">&#9888; {r}</div>'
-            for r in risks[:3]
-        ) or '<div style="font-size:11px;color:#a0aec0">No risks identified</div>'
-
-        cards += f"""
-<div style="margin:8px 0;padding:14px;background:#f8faff;border-radius:8px;border-left:4px solid {border_color}">
-  <!-- Card header -->
+def _header(run_date: str) -> str:
+    return f"""
+<div style="background:linear-gradient(135deg,#1a202c 0%,#2d3748 100%);padding:20px 24px">
   <table style="width:100%;border-collapse:collapse">
     <tr>
-      <td style="font-weight:700;font-size:13px;color:#1a1a2e">
-        {i}. {s.symbol} &nbsp;
-        <span style="font-weight:400;font-size:11px;color:#718096">{name}</span>
+      <td>
+        <div style="color:white;font-size:18px;font-weight:700">NSE Stock Analysis</div>
+        <div style="color:#a0aec0;font-size:11px;margin-top:3px">{run_date}</div>
+      </td>
+      <td style="text-align:right;color:#4fd1c5;font-size:22px;font-weight:800">NSE</td>
+    </tr>
+  </table>
+</div>"""
+
+
+# ── 2. Market Overview ────────────────────────────────────────────────────────
+
+def _market_overview(indices: list[dict], fii_dii: dict | None) -> str:
+    if not indices and not fii_dii:
+        return ""
+
+    # Index cards
+    index_cells = ""
+    for idx in indices:
+        price = idx.get("price")
+        chg   = idx.get("change")
+        pct   = idx.get("change_pct")
+        if price is None:
+            continue
+        is_up    = (pct or 0) >= 0
+        pct_color = "#276749" if is_up else "#c53030"
+        arrow    = "&#9650;" if is_up else "&#9660;"
+        sign     = "+" if is_up else ""
+        index_cells += f"""
+<td style="padding:8px 10px;text-align:center;border-right:1px solid #e2e8f0">
+  <div style="font-size:9px;color:#718096;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">{idx['name']}</div>
+  <div style="font-size:13px;font-weight:700;color:#1a202c">{price:,.0f}</div>
+  <div style="font-size:10px;font-weight:600;color:{pct_color}">{arrow} {sign}{pct:.2f}%</div>
+</td>"""
+
+    # FII/DII row
+    fii_html = ""
+    if fii_dii:
+        def _net_badge(v: float) -> str:
+            color = "#276749" if v >= 0 else "#c53030"
+            sign  = "+" if v >= 0 else ""
+            return f'<span style="color:{color};font-weight:700">{sign}{v:,.0f} Cr</span>'
+
+        fii_html = f"""
+<div style="padding:10px 16px;background:#f7fafc;border-top:1px solid #e2e8f0">
+  <table style="width:100%;border-collapse:collapse">
+    <tr>
+      <td style="font-size:10px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:0.5px">
+        FII / DII Activity &nbsp;
+        <span style="font-weight:400;color:#a0aec0">(as of {fii_dii.get('date','')})</span>
+      </td>
+      <td style="text-align:right;font-size:11px">
+        FII Net: {_net_badge(fii_dii['fii_net'])}
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        DII Net: {_net_badge(fii_dii['dii_net'])}
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding-top:4px;font-size:10px;color:#a0aec0">
+        FII Buy: {fii_dii['fii_buy']:,.0f} Cr &nbsp; Sell: {fii_dii['fii_sell']:,.0f} Cr
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        DII Buy: {fii_dii['dii_buy']:,.0f} Cr &nbsp; Sell: {fii_dii['dii_sell']:,.0f} Cr
+        &nbsp;&nbsp;
+        <span style="color:#cbd5e0">Source: NSE India</span>
+      </td>
+    </tr>
+  </table>
+</div>"""
+
+    return f"""
+<div style="padding:12px 16px;background:#f7fafc;border-bottom:2px solid #e2e8f0">
+  <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#a0aec0;margin-bottom:8px">
+    Market Overview &nbsp;<span style="color:#cbd5e0;font-weight:400">Source: Yahoo Finance</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0">
+    <tr>{index_cells}</tr>
+  </table>
+</div>
+{fii_html}"""
+
+
+# ── 3. Section block ──────────────────────────────────────────────────────────
+
+def _section_block(sec: dict, stock_data: dict, qual: dict) -> str:
+    stocks      = sec.get("stocks", [])
+    name        = sec["name"]
+    desc        = sec.get("description", "")
+    criteria    = sec.get("criteria_note", "")
+    color_hdr   = sec.get("color_header", "#2d3748")
+    color_bdr   = sec.get("color_border", "#cbd5e0")
+    q_count     = sec.get("qualifying_count", 0)
+
+    if not stocks:
+        no_picks = f"""
+<div style="padding:12px 16px;background:#fffbeb;border-radius:8px;margin:12px 16px;font-size:11px;color:#744210">
+  No stocks qualified for this section today.
+  ({q_count} met the criteria but were shown recently — check back next run.)
+</div>"""
+        body = no_picks
+    else:
+        body = "".join(_stock_card(s, stock_data, qual, color_bdr) for s in stocks)
+
+    return f"""
+<div style="border-top:3px solid {color_bdr};margin-top:0">
+  <!-- Section header -->
+  <div style="background:{color_hdr};padding:12px 20px">
+    <table style="width:100%;border-collapse:collapse">
+      <tr>
+        <td>
+          <div style="color:white;font-size:14px;font-weight:700">{name}</div>
+          <div style="color:rgba(255,255,255,0.65);font-size:10px;margin-top:2px">{desc}</div>
+        </td>
+        <td style="text-align:right;color:rgba(255,255,255,0.5);font-size:10px">
+          {q_count} stocks qualified
+        </td>
+      </tr>
+    </table>
+  </div>
+  <!-- Criteria note -->
+  <div style="padding:6px 20px;background:rgba(0,0,0,0.03);font-size:9px;color:#a0aec0;border-bottom:1px solid #e2e8f0">
+    Criteria: {criteria}
+  </div>
+  <!-- Stock cards -->
+  {body}
+</div>"""
+
+
+# ── 4. Per-stock card ─────────────────────────────────────────────────────────
+
+def _stock_card(s: StockScore, stock_data: dict, qual: dict, border_color: str) -> str:
+    f    = stock_data.get(s.symbol, {}).get("fundamentals", {})
+    t    = stock_data.get(s.symbol, {}).get("technicals", {})
+    u    = stock_data.get(s.symbol, {}).get("universe", {})
+    q    = qual.get(s.symbol, {})
+
+    name     = f.get("company_name") or s.symbol
+    sector   = u.get("sector") or f.get("sector_yf") or ""
+    sentiment = q.get("overall_sentiment", "") if q else ""
+
+    sent_color = {"Positive": "#276749", "Negative": "#c53030"}.get(sentiment, "#718096")
+    sent_badge = (
+        f'<span style="background:{sent_color};color:white;padding:2px 8px;'
+        f'border-radius:8px;font-size:9px;font-weight:700">{sentiment}</span>'
+        if sentiment else ""
+    )
+
+    return f"""
+<div style="padding:14px 20px;border-bottom:1px solid #edf2f7">
+
+  <!-- Stock header -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
+    <tr>
+      <td>
+        <span style="font-size:15px;font-weight:800;color:#1a202c">{s.symbol}</span>
+        <span style="font-size:11px;color:#718096;margin-left:6px">{name}</span>
+        <span style="font-size:10px;color:#4a90d9;margin-left:6px">{sector}</span>
       </td>
       <td style="text-align:right">
-        <span style="background:{badge_bg};color:white;padding:3px 9px;border-radius:10px;font-size:10px;font-weight:700">
-          {sentiment}
+        {sent_badge}
+        <span style="background:#edf2f7;color:#2d3748;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-left:4px">
+          Score {s.composite:.1f}
         </span>
       </td>
     </tr>
   </table>
-  <!-- Tone -->
-  <div style="margin-top:6px;font-size:11px;color:#4a5568">
-    <span style="background:{tone_badge_bg};color:white;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;margin-right:6px">{tone}</span>
-    {tone_rsn}
+
+  <!-- Data grid: 3 columns -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+    <tr style="vertical-align:top">
+      <td style="width:33%;padding-right:8px">{_box("PRICE", _price_rows(f, t))}</td>
+      <td style="width:33%;padding-right:8px">{_box("KEY RATIOS", _ratios_rows(f))}</td>
+      <td style="width:34%">{_box("STOCK PERFORMANCE", _perf_rows(t))}</td>
+    </tr>
+  </table>
+
+  <!-- Growth table -->
+  {_growth_table(f)}
+
+  <!-- Quarterly financial performance -->
+  {_quarterly_section(f)}
+
+  <!-- AI Qualitative insights -->
+  {_qual_section(q, border_color)}
+
+</div>"""
+
+
+# ── Helper: coloured box ──────────────────────────────────────────────────────
+
+def _box(title: str, content: str) -> str:
+    return (
+        f'<div style="background:#f7fafc;border-radius:6px;padding:8px 10px">'
+        f'<div style="font-size:8px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.8px;color:#a0aec0;margin-bottom:5px">{title}</div>'
+        f'{content}</div>'
+    )
+
+
+def _kv(label: str, value: str, vc: str = "#1a202c") -> str:
+    return (
+        f'<table style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
+        f'<td style="font-size:9px;color:#718096">{label}</td>'
+        f'<td style="font-size:10px;font-weight:600;color:{vc};text-align:right">{value}</td>'
+        f'</tr></table>'
+    )
+
+
+def _color(v: float | None) -> str:
+    if v is None:
+        return "#a0aec0"
+    return "#276749" if v >= 0 else "#c53030"
+
+
+def _pct(v: float | None, plus: bool = True) -> str:
+    if v is None:
+        return "—"
+    s = "+" if plus and v > 0 else ""
+    return f"{s}{v:.1f}%"
+
+
+# ── Price block ───────────────────────────────────────────────────────────────
+
+def _price_rows(f: dict, t: dict) -> str:
+    cmp  = t.get("close")
+    pe   = f.get("pe_ratio")
+    e50  = t.get("price_vs_ema50_pct")
+    e200 = t.get("price_vs_ema200_pct")
+    ema50_val  = t.get("EMA_50")
+    ema200_val = t.get("EMA_200")
+
+    def _ema_str(pct, val):
+        if pct is None:
+            return "—"
+        lbl = "above" if pct >= 0 else "below"
+        sign = "+" if pct >= 0 else ""
+        price_part = f" ({val:,.0f})" if val else ""
+        return f"{sign}{pct:.1f}% {lbl}{price_part}"
+
+    return (
+        _kv("CMP", f"&#8377;{cmp:,.1f}" if cmp else "—")
+        + _kv("P/E Ratio", f"{pe:.1f}x" if pe else "—")
+        + _kv("vs EMA 50",  _ema_str(e50,  ema50_val),  _color(e50))
+        + _kv("vs EMA 200", _ema_str(e200, ema200_val), _color(e200))
+    )
+
+
+# ── Ratios block ──────────────────────────────────────────────────────────────
+
+def _ratios_rows(f: dict) -> str:
+    roe  = f.get("roe_5yr_avg") or f.get("roe_ttm")
+    roce = f.get("roce_5yr_avg") or f.get("roce")
+    roa  = f.get("roa_5yr_avg") or f.get("roa")
+    npm  = f.get("npm_ttm") or f.get("npm_q1")
+    return (
+        _kv("ROE (5yr avg)",  f"{roe:.1f}%"  if roe  else "—")
+        + _kv("ROCE (5yr avg)", f"{roce:.1f}%" if roce else "—")
+        + _kv("ROA (5yr avg)",  f"{roa:.1f}%"  if roa  else "—")
+        + _kv("Net Margin",     f"{npm:.1f}%"  if npm  else "—")
+    )
+
+
+# ── Stock performance block ───────────────────────────────────────────────────
+
+def _perf_rows(t: dict) -> str:
+    ytd  = t.get("return_ytd")
+    y3   = t.get("return_3yr")
+    y5   = t.get("return_5yr")
+    y10  = t.get("return_10yr")
+    return (
+        _kv("YTD",     _pct(ytd), _color(ytd))
+        + _kv("3 Year",  _pct(y3),  _color(y3))
+        + _kv("5 Year",  _pct(y5),  _color(y5))
+        + _kv("10 Year", _pct(y10), _color(y10))
+    )
+
+
+# ── Growth table (Revenue + Net Profit) ──────────────────────────────────────
+
+def _growth_table(f: dict) -> str:
+    def _cell(v: float | None) -> str:
+        if v is None:
+            return '<td style="padding:3px 6px;text-align:center;font-size:10px;color:#a0aec0">—</td>'
+        c = "#276749" if v >= 0 else "#c53030"
+        s = "+" if v > 0 else ""
+        return f'<td style="padding:3px 6px;text-align:center;font-size:10px;font-weight:600;color:{c}">{s}{v:.1f}%</td>'
+
+    return f"""
+<div style="background:#f7fafc;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+  <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#a0aec0;margin-bottom:5px">
+    GROWTH &nbsp;<span style="color:#cbd5e0;font-weight:400">Source: Screener.in / Yahoo Finance</span>
   </div>
-  <!-- Positives + Risks side by side -->
-  <table style="width:100%;border-collapse:collapse;margin-top:10px">
-    <tr>
-      <td style="width:50%;vertical-align:top;padding-right:10px">
-        <div style="font-size:10px;font-weight:700;color:#276749;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Positives</div>
-        {pos_items}
+  <table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr>
+        <th style="padding:3px 6px;font-size:8px;color:#a0aec0;text-align:left;font-weight:600"></th>
+        <th style="padding:3px 6px;font-size:8px;color:#a0aec0;text-align:center;font-weight:600">YoY</th>
+        <th style="padding:3px 6px;font-size:8px;color:#a0aec0;text-align:center;font-weight:600">3 Year</th>
+        <th style="padding:3px 6px;font-size:8px;color:#a0aec0;text-align:center;font-weight:600">5 Year</th>
+        <th style="padding:3px 6px;font-size:8px;color:#a0aec0;text-align:center;font-weight:600">10 Year</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-top:1px solid #e2e8f0">
+        <td style="padding:3px 6px;font-size:9px;font-weight:600;color:#4a5568">Revenue</td>
+        {_cell(f.get('revenue_yoy'))}{_cell(f.get('revenue_cagr_3yr'))}{_cell(f.get('revenue_cagr_5yr'))}{_cell(f.get('revenue_cagr_10yr'))}
+      </tr>
+      <tr style="border-top:1px solid #e2e8f0">
+        <td style="padding:3px 6px;font-size:9px;font-weight:600;color:#4a5568">Net Profit</td>
+        {_cell(f.get('pat_yoy'))}{_cell(f.get('pat_cagr_3yr'))}{_cell(f.get('pat_cagr_5yr'))}{_cell(f.get('pat_cagr_10yr'))}
+      </tr>
+    </tbody>
+  </table>
+</div>"""
+
+
+# ── Quarterly performance (QoQ / YoY) ────────────────────────────────────────
+
+def _quarterly_section(f: dict) -> str:
+    q1 = f.get("q1_label") or "Latest Q"
+    q2 = f.get("q2_label") or "Prev Q"
+    r1  = f.get("rev_q1_cr")
+    r2  = f.get("rev_q2_cr")
+    rqq = f.get("rev_qoq_pct")
+    ryy = f.get("rev_yoy_pct")
+    o1, o2, odelta = f.get("opm_q1"), f.get("opm_q2"), f.get("opm_qoq_pts")
+    n1, n2, ndelta = f.get("npm_q1"), f.get("npm_q2"), f.get("npm_qoq_pts")
+
+    # Skip if no quarterly data at all
+    if not any([r1, o1, n1]):
+        return ""
+
+    def _margin_delta(delta: float | None) -> str:
+        if delta is None:
+            return "—"
+        c = "#276749" if delta >= 0 else "#c53030"
+        s = "+" if delta > 0 else ""
+        return f'<span style="color:{c}">{s}{delta:.1f} pp</span>'
+
+    def _fmt_cr(v: float | None) -> str:
+        return f"&#8377;{v:,.0f} Cr" if v else "—"
+
+    return f"""
+<div style="background:#f7fafc;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+  <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#a0aec0;margin-bottom:5px">
+    QUARTERLY PERFORMANCE &nbsp;<span style="color:#cbd5e0;font-weight:400">Source: Yahoo Finance</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:10px">
+    <thead>
+      <tr>
+        <th style="padding:3px 6px;text-align:left;font-size:8px;color:#a0aec0;font-weight:600">Metric</th>
+        <th style="padding:3px 6px;text-align:right;font-size:8px;color:#a0aec0;font-weight:600">{q1}</th>
+        <th style="padding:3px 6px;text-align:right;font-size:8px;color:#a0aec0;font-weight:600">{q2}</th>
+        <th style="padding:3px 6px;text-align:right;font-size:8px;color:#a0aec0;font-weight:600">QoQ</th>
+        <th style="padding:3px 6px;text-align:right;font-size:8px;color:#a0aec0;font-weight:600">YoY</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-top:1px solid #e2e8f0">
+        <td style="padding:3px 6px;font-weight:600;color:#4a5568">Revenue</td>
+        <td style="padding:3px 6px;text-align:right">{_fmt_cr(r1)}</td>
+        <td style="padding:3px 6px;text-align:right;color:#718096">{_fmt_cr(r2)}</td>
+        <td style="padding:3px 6px;text-align:right">{_pct(rqq) if rqq else "—"}</td>
+        <td style="padding:3px 6px;text-align:right">{_pct(ryy) if ryy else "—"}</td>
+      </tr>
+      <tr style="border-top:1px solid #e2e8f0">
+        <td style="padding:3px 6px;font-weight:600;color:#4a5568">OPM</td>
+        <td style="padding:3px 6px;text-align:right">{f"{o1:.1f}%" if o1 else "—"}</td>
+        <td style="padding:3px 6px;text-align:right;color:#718096">{f"{o2:.1f}%" if o2 else "—"}</td>
+        <td style="padding:3px 6px;text-align:right">{_margin_delta(odelta)}</td>
+        <td style="padding:3px 6px;text-align:right;color:#a0aec0">—</td>
+      </tr>
+      <tr style="border-top:1px solid #e2e8f0">
+        <td style="padding:3px 6px;font-weight:600;color:#4a5568">NPM</td>
+        <td style="padding:3px 6px;text-align:right">{f"{n1:.1f}%" if n1 else "—"}</td>
+        <td style="padding:3px 6px;text-align:right;color:#718096">{f"{n2:.1f}%" if n2 else "—"}</td>
+        <td style="padding:3px 6px;text-align:right">{_margin_delta(ndelta)}</td>
+        <td style="padding:3px 6px;text-align:right;color:#a0aec0">—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>"""
+
+
+# ── AI Qualitative insights ───────────────────────────────────────────────────
+
+def _qual_section(q: dict, border_color: str) -> str:
+    if not q or q.get("management_tone") == "Unknown":
+        return ""
+
+    tone     = q.get("management_tone", "")
+    rsn      = q.get("tone_reason", "")
+    pos_list = q.get("key_positives", [])
+    risk_list= q.get("key_risks", [])
+    triggers = q.get("recent_triggers", "")
+
+    tone_bg = {"Bullish": "#276749", "Cautious": "#744210", "Mixed": "#2c5282"}.get(tone, "#4a5568")
+
+    pos_html = "".join(
+        f'<div style="font-size:9px;color:#2d3748;padding:1px 0">&#10003; {p}</div>'
+        for p in pos_list[:3]
+    ) or '<div style="font-size:9px;color:#a0aec0">—</div>'
+
+    risk_html = "".join(
+        f'<div style="font-size:9px;color:#2d3748;padding:1px 0">&#9650; {r}</div>'
+        for r in risk_list[:3]
+    ) or '<div style="font-size:9px;color:#a0aec0">—</div>'
+
+    return f"""
+<div style="border-left:3px solid {border_color};padding:8px 10px;background:#f7fafc;border-radius:0 6px 6px 0;margin-bottom:2px">
+  <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#a0aec0;margin-bottom:5px">
+    AI INSIGHTS &nbsp;<span style="color:#cbd5e0;font-weight:400">Source: Google News RSS + Gemini 2.5 Flash</span>
+  </div>
+  <div style="margin-bottom:6px">
+    <span style="background:{tone_bg};color:white;padding:1px 7px;border-radius:6px;font-size:9px;font-weight:700">{tone}</span>
+    <span style="font-size:9px;color:#4a5568;margin-left:6px">{rsn}</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse">
+    <tr style="vertical-align:top">
+      <td style="width:50%;padding-right:8px">
+        <div style="font-size:8px;font-weight:700;color:#276749;text-transform:uppercase;margin-bottom:3px">Positives</div>
+        {pos_html}
       </td>
-      <td style="width:50%;vertical-align:top;padding-left:10px;border-left:1px solid #e2e8f0">
-        <div style="font-size:10px;font-weight:700;color:#c53030;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Risks</div>
-        {risk_items}
+      <td style="width:50%;padding-left:8px;border-left:1px solid #e2e8f0">
+        <div style="font-size:8px;font-weight:700;color:#c53030;text-transform:uppercase;margin-bottom:3px">Risks</div>
+        {risk_html}
       </td>
     </tr>
   </table>
-  <!-- Triggers -->
-  {f'<div style="margin-top:8px;font-size:11px;color:#718096;font-style:italic"><strong style="color:#4a5568">Recent triggers:</strong> {triggers}</div>' if triggers else ""}
+  {f'<div style="margin-top:6px;font-size:9px;color:#718096"><strong style="color:#4a5568">Triggers:</strong> {triggers}</div>' if triggers else ""}
 </div>"""
 
-    if not cards:
-        return ""
 
-    return f"""
-  <div style="padding:16px 28px 8px">
-    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4a5568;margin-bottom:12px">
-      Qualitative Insights (AI-synthesised from recent news)
-    </div>
-    {cards}
-    <div style="font-size:10px;color:#a0aec0;margin-top:8px">
-      Powered by Gemini 1.5 Flash &nbsp;·&nbsp; Based on publicly available news. Not investment advice.
-    </div>
-  </div>"""
+# ── Footer ────────────────────────────────────────────────────────────────────
 
-
-def _build_screen_sections(screen_results: list[dict]) -> str:
-    html = ""
-    for screen in screen_results:
-        sym_list = screen.get("symbols", [])
-        if not sym_list:
-            continue
-        name        = screen.get("name", screen.get("id", ""))
-        count       = len(sym_list)
-        sym_display = ", ".join(sym_list[:20])
-        if count > 20:
-            sym_display += f" ... +{count - 20} more"
-        html += f"""
-<div style="margin-top:16px;padding:0 28px 16px">
-  <div style="font-weight:700;font-size:12px;color:#1a1a2e;border-left:3px solid #63b3ed;padding-left:10px;margin-bottom:8px">
-    {name} &mdash; {count} stocks
+def _footer() -> str:
+    return """
+<div style="background:#f7fafc;padding:12px 20px;border-top:1px solid #e2e8f0;text-align:center">
+  <div style="font-size:9px;color:#a0aec0;margin-bottom:4px">
+    <strong>Sources:</strong>
+    Index prices: Yahoo Finance &nbsp;|&nbsp;
+    FII/DII: NSE India (nseindia.com) &nbsp;|&nbsp;
+    Fundamentals: Screener.in + Yahoo Finance &nbsp;|&nbsp;
+    AI insights: Google News RSS + Gemini 2.5 Flash
   </div>
-  <div style="font-size:11px;color:#4a5568;line-height:1.8">{sym_display}</div>
+  <div style="font-size:9px;color:#cbd5e0">
+    NSE Stock Analysis Agent &nbsp;|&nbsp;
+    <strong style="color:#a0aec0">Not investment advice. Verify before acting.</strong>
+  </div>
 </div>"""
-    return html
